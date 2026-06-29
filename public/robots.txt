@@ -1,0 +1,7 @@
+# Robots.txt for Natton Digital AI Marketing SaaS
+User-agent: *
+Allow: /
+
+# Host & Sitemaps
+Sitemap: https://natton.digital/sitemap.xml
+Host: https://natton.digital

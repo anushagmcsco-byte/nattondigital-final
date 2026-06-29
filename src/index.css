@@ -1,0 +1,183 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Brand Colors - Matched Exactly to the Premium Logo Image Palette */
+  --color-primary: #2E9CAE; /* Logo Sky Teal-Blue */
+  --color-secondary: #99D57C; /* Logo Leaf Green */
+  --color-accent: #47C7BF; /* Logo Vibrant Turquoise Teal */
+  --color-dark: #110B33; /* Logo Deep Violet-Navy Text */
+  --color-light: #F5F9FA; /* Off-white with a soft teal hint */
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+  }
+}
+
+/* Glassmorphism utility classes */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(8, 17, 32, 0.05);
+}
+
+.glass-card {
+  background: rgba(11, 95, 255, 0.02);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(11, 95, 255, 0.08);
+}
+
+/* Neon Glow utilities */
+.glow-primary {
+  box-shadow: 0 0 25px rgba(11, 95, 255, 0.25);
+}
+
+.glow-secondary {
+  box-shadow: 0 0 25px rgba(0, 194, 255, 0.25);
+}
+
+.glow-accent {
+  box-shadow: 0 0 25px rgba(123, 97, 255, 0.25);
+}
+
+/* Custom Animations */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 8s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 25s linear infinite;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   Logo Brand Color & Gradient Overrides for the Entire Website
+   ========================================================================== */
+
+/* Overriding hardcoded Tailwind cyan (#00C2FF) with official logo vibrant turquoise-teal (#47C7BF) */
+.text-\[\#00C2FF\] {
+  color: #47C7BF !important;
+}
+.bg-\[\#00C2FF\] {
+  background-color: #47C7BF !important;
+}
+.border-\[\#00C2FF\] {
+  border-color: #47C7BF !important;
+}
+.hover\:text-\[\#00C2FF\]:hover {
+  color: #47C7BF !important;
+}
+.hover\:bg-\[\#00C2FF\]:hover {
+  background-color: #47C7BF !important;
+}
+.hover\:border-\[\#00C2FF\]:hover {
+  border-color: #47C7BF !important;
+}
+.focus\:border-\[\#00C2FF\]:focus {
+  border-color: #47C7BF !important;
+}
+.bg-\[\#00C2FF\]\/10 {
+  background-color: rgba(71, 199, 191, 0.1) !important;
+}
+.bg-\[\#00C2FF\]\/20 {
+  background-color: rgba(71, 199, 191, 0.2) !important;
+}
+.bg-\[\#00C2FF\]\/5 {
+  background-color: rgba(71, 199, 191, 0.05) !important;
+}
+.border-l-4.border-\[\#00C2FF\] {
+  border-left-color: #47C7BF !important;
+}
+
+/* Overriding other blue/purple gradients with the official logo leaf-green -> turquoise -> sky-blue gradient */
+.bg-gradient-to-r.from-blue-600.to-purple-600,
+.bg-gradient-to-r.from-blue-600.via-violet-600.to-indigo-600,
+.bg-gradient-to-r.from-blue-500.via-purple-500.to-cyan-500,
+.bg-gradient-to-r.from-primary.via-\[\#00C2FF\].to-accent,
+.bg-gradient-to-r.from-purple-600.to-blue-600,
+.bg-gradient-to-r.from-purple-500\/10.via-blue-500\/5.to-transparent,
+.bg-gradient-to-r.from-purple-500\/10.to-transparent,
+.bg-gradient-to-r.from-purple-500\/15.through-cyan-500\/5.to-transparent,
+.bg-gradient-to-r.from-blue-500\/10.via-purple-500\/10.to-transparent,
+.bg-gradient-to-r.from-blue-600\/20.via-purple-600\/20.to-transparent,
+.bg-gradient-to-r.from-blue-500\/10.via-violet-500\/5.to-transparent,
+.bg-gradient-to-l.from-blue-500\/10.via-violet-500\/5.to-transparent,
+.bg-gradient-to-r.from-emerald-600.to-teal-500 {
+  background-image: linear-gradient(135deg, #99D57C 0%, #47C7BF 45%, #2E9CAE 100%) !important;
+}
+
+/* Overriding text gradient clips with the official logo gradient */
+.text-transparent.bg-gradient-to-r.from-primary.via-\[\#00C2FF\].to-accent,
+.text-transparent.bg-gradient-to-r.from-blue-400.via-purple-300.to-cyan-400,
+.text-transparent.bg-gradient-to-r.from-blue-400.via-indigo-300.to-purple-400,
+.text-transparent.bg-gradient-to-r.from-blue-400.via-violet-300.to-slate-400,
+.text-transparent.bg-gradient-to-r.from-purple-400.via-cyan-300.to-emerald-400,
+.text-transparent.bg-gradient-to-r.from-purple-400.to-emerald-400,
+.text-transparent.bg-gradient-to-r.from-purple-400.via-indigo-300.to-purple-400 {
+  background-image: linear-gradient(135deg, #99D57C 0%, #47C7BF 45%, #2E9CAE 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+}
+
+/* Global focus and selection styles matched to logo teal */
+::selection {
+  background-color: rgba(71, 199, 191, 0.3);
+  color: inherit;
+}
