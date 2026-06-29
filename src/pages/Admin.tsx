@@ -27,6 +27,8 @@ import {
   deleteBlogPost, 
   deleteCommentFromPost 
 } from '../utils/blogService';
+import GoogleSheetsTab from '../components/GoogleSheetsTab';
+import { FileSpreadsheet } from 'lucide-react';
 
 interface AdminProps {
   setPath: (path: RoutePath) => void;
@@ -65,7 +67,7 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
   const [formError, setFormError] = useState('');
   
   // Tab State
-  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'comments'>('list');
+  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'comments' | 'sheets'>('list');
 
   // Load posts
   useEffect(() => {
@@ -343,7 +345,7 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
               </div>
 
               {/* Tab Buttons */}
-              <div className="flex bg-[#0B0721] p-1 rounded-xl border border-white/10">
+              <div className="flex flex-wrap bg-[#0B0721] p-1 rounded-xl border border-white/10 gap-1 sm:gap-0">
                 <button
                   onClick={() => { setActiveTab('list'); resetForm(); }}
                   className={`px-4 py-1.5 rounded-lg text-xs font-mono transition-all ${
@@ -369,6 +371,15 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
                   Comments ({allComments.length})
+                </button>
+                <button
+                  onClick={() => { setActiveTab('sheets'); resetForm(); }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-1 ${
+                    activeTab === 'sheets' ? 'bg-[#00C2FF] text-black font-black' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Google Sheets Sync
                 </button>
               </div>
             </div>
@@ -785,6 +796,19 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
                       )}
                     </div>
                   </div>
+                </motion.div>
+              )}
+
+              {/* TAB 4: GOOGLE SHEETS SYNC LOGS & SETTINGS */}
+              {activeTab === 'sheets' && (
+                <motion.div
+                  key="sheets"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-4"
+                >
+                  <GoogleSheetsTab />
                 </motion.div>
               )}
 

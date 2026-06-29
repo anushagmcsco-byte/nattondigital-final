@@ -268,6 +268,114 @@ export default function App() {
     }
   }, [path]);
 
+  // Toast notification state for Google Sheet synchronization
+  const [sheetToast, setSheetToast] = useState<{ show: boolean; formName: string; leadName: string; id: string } | null>(null);
+
+  // Capture ALL forms submitted on any page automatically and write to Google Sheets!
+  useEffect(() => {
+    const handleGlobalFormSubmit = (event: Event) => {
+      const form = event.target as HTMLFormElement;
+      
+      // Security: Do NOT capture admin login or moderation forms
+      const isLoginForm = form.querySelector('input[type="password"]') !== null || 
+                          form.id?.includes('login') || 
+                          form.className?.includes('login') ||
+                          form.getAttribute('action')?.includes('login');
+      if (isLoginForm) return;
+
+      // Determine the form name or source
+      let formName = form.getAttribute('data-form-name') || '';
+      if (!formName) {
+        // Try to locate heading or parent text
+        const titleEl = form.querySelector('h2, h3, h4');
+        if (titleEl) {
+          formName = titleEl.textContent?.trim() || '';
+        }
+      }
+      if (!formName) {
+        // Fallback to active page path
+        const pageTitle = path.split('/').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        formName = `${pageTitle || 'Home'} Lead Form`;
+      }
+
+      // Serialize form fields dynamically based on labels, placeholders or inputs
+      const payload: Record<string, any> = {};
+      const inputs = form.querySelectorAll('input, select, textarea');
+      
+      inputs.forEach((el) => {
+        const input = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        if (input.type === 'submit' || input.type === 'button') return;
+        
+        let fieldName = input.name || input.id;
+        if (!fieldName) {
+          // Look for preceding or adjacent labels
+          const parent = input.parentElement;
+          const label = parent?.querySelector('label') || form.querySelector(`label[for="${input.id}"]`);
+          if (label) {
+            fieldName = label.textContent?.trim() || '';
+          } else {
+            const prevSibling = parent?.previousElementSibling;
+            if (prevSibling && prevSibling.tagName === 'LABEL') {
+              fieldName = prevSibling.textContent?.trim() || '';
+            }
+          }
+        }
+        
+        if (!fieldName) {
+          fieldName = input.placeholder || input.type || 'field';
+        }
+        
+        // Clean name
+        fieldName = fieldName.replace(/[:*]/g, '').trim();
+        
+        if (input instanceof HTMLInputElement && (input.type === 'checkbox' || input.type === 'radio')) {
+          if (input.type === 'checkbox') {
+            payload[fieldName] = input.checked ? 'Yes' : 'No';
+          } else if (input.checked) {
+            payload[fieldName] = input.value;
+          }
+        } else {
+          payload[fieldName] = input.value;
+        }
+      });
+
+      // Avoid capturing empty payloads
+      if (Object.keys(payload).length > 0) {
+        // Register the form submission to localStorage and remote webhook
+        import('./utils/googleSheets').then(({ registerFormSubmission }) => {
+          registerFormSubmission(formName, payload);
+        });
+      }
+    };
+
+    // Listen to our custom sheet sync events to trigger the beautiful toast
+    const handleSyncToast = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const sub = customEvent.detail;
+      const name = sub.payload['Full Name'] || sub.payload['Contact Name'] || sub.payload['Name'] || 'A User';
+      
+      setSheetToast({
+        show: true,
+        formName: sub.formName,
+        leadName: String(name),
+        id: sub.id
+      });
+
+      // Auto dismiss after 6 seconds
+      setTimeout(() => {
+        setSheetToast(null);
+      }, 6000);
+    };
+
+    document.addEventListener('submit', handleGlobalFormSubmit);
+    window.addEventListener('natton_google_sheet_sync', handleSyncToast);
+    
+    return () => {
+      document.removeEventListener('submit', handleGlobalFormSubmit);
+      window.removeEventListener('natton_google_sheet_sync', handleSyncToast);
+    };
+  }, [path]);
+
   // Scroll to top on route change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -397,6 +505,44 @@ export default function App() {
 
       {/* Footer */}
       <Footer setPath={setPath} darkMode={darkMode} />
+
+      {/* Live Google Sheets Synchronization toast overlay */}
+      {sheetToast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-[#0F0A30] border border-[#00C2FF]/30 p-4 rounded-2xl shadow-2xl flex items-start gap-3 animate-fade-in backdrop-blur-md text-white">
+          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <CheckCircle className="h-5 w-5" />
+          </div>
+          <div className="space-y-1 flex-grow text-left">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase tracking-wider">Sheets Synced Live</span>
+              <span className="text-[9px] font-mono text-gray-500">#{sheetToast.id}</span>
+            </div>
+            <h5 className="text-xs font-bold text-white font-display">New Lead Appended!</h5>
+            <p className="text-[10px] text-gray-400 leading-relaxed">
+              Captured <strong>{sheetToast.leadName}</strong> via <em>"{sheetToast.formName}"</em> and pushed record to Google Sheet.
+            </p>
+            <div className="pt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  setPath('admin');
+                  // Set active tab to sheets in localStorage
+                  localStorage.setItem('admin_authenticated', 'true');
+                  setSheetToast(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-[#00C2FF] text-black text-[9px] font-mono font-bold hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                Inspect Sheet Console
+              </button>
+              <button
+                onClick={() => setSheetToast(null)}
+                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 text-[9px] font-mono border border-white/5 transition-colors cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
