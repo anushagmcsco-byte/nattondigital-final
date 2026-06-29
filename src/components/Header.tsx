@@ -367,17 +367,6 @@ export default function Header({ currentPath, setPath, darkMode, setDarkMode }: 
             >
               Contact
             </button>
-
-            <button
-              onClick={() => setPath('admin')}
-              className={`text-sm font-medium transition-colors ${
-                currentPath === 'admin'
-                  ? 'text-[#00C2FF] font-semibold'
-                  : (darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900')
-              }`}
-            >
-              Admin Panel
-            </button>
           </nav>
 
           {/* Search, Theme controls & CTAs */}
