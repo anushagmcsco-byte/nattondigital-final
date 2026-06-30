@@ -224,7 +224,7 @@ export default function DashboardPreview({ darkMode = true }: { darkMode?: boole
                         : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900')
                 }`}
               >
-                {industryData[key].name.split(' ')[0]}
+                {key === 'realestate' ? 'Real Estate' : industryData[key].name.split(' ')[0]}
               </button>
             ))}
           </div>
@@ -625,7 +625,7 @@ export default function DashboardPreview({ darkMode = true }: { darkMode?: boole
                   darkMode ? 'bg-black/40 text-gray-300' : 'bg-gray-900 text-gray-200'
                 }`}>
                   <div className="text-gray-500 text-[10px] mb-2">[Client Inbox Connect 10:45 AM]</div>
-                  <div className="text-[#00C2FF]">AI: Hello! Ready to optimize your {currentInd.name.split(' ')[0]} workflow?</div>
+                  <div className="text-[#00C2FF]">AI: Hello! Ready to optimize your {selectedIndustry === 'realestate' ? 'Real Estate' : currentInd.name.split(' ')[0]} workflow?</div>
                   <div className="text-yellow-400 mt-1">Lead: Yes! Can you send me case studies?</div>
                   <div className="text-[#00C2FF] mt-1">AI: Sent! We optimized {selectedIndustry} efficiency to {currentInd.after}. Book a strategy call: app.natton.com/call</div>
                   <div className="text-emerald-400 mt-1">Lead: booked. That was instant!</div>
@@ -655,7 +655,7 @@ export default function DashboardPreview({ darkMode = true }: { darkMode?: boole
                     🎙️ AI VOICE PATTERN GENERATING...
                   </div>
                   <div className="text-[10px] text-gray-400 leading-snug">
-                    "Hi there, this is the assistant for Natton GrowthOS. I noticed you requested an automation plan for {currentInd.name.split(' ')[0]}."
+                    "Hi there, this is the assistant for Natton GrowthOS. I noticed you requested an automation plan for {selectedIndustry === 'realestate' ? 'Real Estate' : currentInd.name.split(' ')[0]}."
                   </div>
                 </div>
               </div>

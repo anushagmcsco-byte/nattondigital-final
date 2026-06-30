@@ -322,7 +322,7 @@ export default function App() {
         }
         
         if (!fieldName) {
-          fieldName = input.placeholder || input.type || 'field';
+          fieldName = ('placeholder' in input ? (input as HTMLInputElement).placeholder : '') || input.type || 'field';
         }
         
         // Clean name

@@ -54,6 +54,7 @@ export default function GoogleSheetsTab() {
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
     saveGoogleSheetsConfig(config);
+    setConfig(getGoogleSheetsConfig()); // Refresh local state to show the cleanly extracted spreadsheetId!
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   };

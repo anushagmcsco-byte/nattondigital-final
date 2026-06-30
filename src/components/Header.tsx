@@ -467,7 +467,7 @@ export default function Header({ currentPath, setPath, darkMode, setDarkMode }: 
               <div className="grid grid-cols-2 gap-1 pl-2 font-medium">
                 {industries.map(ind => (
                   <button key={ind.path} onClick={() => setPath(ind.path)} className="text-left py-1 text-xs text-gray-400 hover:text-primary transition-colors">
-                    ↳ {ind.name.split(' ')[0]}
+                    ↳ {ind.name.includes('Real Estate') ? 'Real Estate' : ind.name.split(' ')[0]}
                   </button>
                 ))}
               </div>

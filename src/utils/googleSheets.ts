@@ -71,6 +71,45 @@ const DEFAULT_SUBMISSIONS: GoogleSheetSubmission[] = [
   }
 ];
 
+// Helper to extract clean spreadsheet ID from full URLs or raw IDs
+export function extractSpreadsheetId(input: string): string {
+  if (!input) return '';
+  const trimmed = input.trim();
+  // Matches typical Google Sheets URLs (e.g. /spreadsheets/d/SPREADSHEET_ID/edit)
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed;
+}
+
+// Normalizes field names to match standard spreadsheet headers precisely
+export function normalizePayloadKeys(payload: Record<string, any>): Record<string, any> {
+  const normalized: Record<string, any> = {};
+  
+  Object.entries(payload).forEach(([key, val]) => {
+    const k = key.trim().toLowerCase();
+    
+    if (k === 'name' || k === 'full name' || k === 'contact name' || k === 'your name' || k === 'customer name') {
+      normalized['Full Name'] = val;
+    } else if (k === 'email' || k === 'corporate email' || k === 'email address' || k === 'company email') {
+      normalized['Corporate Email'] = val;
+    } else if (k === 'phone' || k === 'mobile contact number' || k === 'contact number' || k === 'phone number' || k === 'mobile' || k === 'telephone') {
+      normalized['Mobile Contact Number'] = val;
+    } else if (k === 'organization' || k === 'company name' || k === 'company' || k === 'firm' || k === 'enterprise') {
+      normalized['Organization'] = val;
+    } else if (k === 'message' || k === 'strategic message' || k === 'your message' || k === 'requirement description' || k === 'enquiry') {
+      normalized['Message'] = val;
+    } else {
+      // Keep other custom fields as they are, stripping colons or asterisks
+      const cleanKey = key.replace(/[:*]/g, '').trim();
+      normalized[cleanKey] = val;
+    }
+  });
+  
+  return normalized;
+}
+
 // Initialize and get configuration
 export function getGoogleSheetsConfig(): GoogleSheetsConfig {
   try {
@@ -79,7 +118,10 @@ export function getGoogleSheetsConfig(): GoogleSheetsConfig {
       localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(DEFAULT_CONFIG));
       return DEFAULT_CONFIG;
     }
-    return JSON.parse(config);
+    const parsed = JSON.parse(config);
+    // Ensure spreadsheet ID is cleaned up
+    parsed.spreadsheetId = extractSpreadsheetId(parsed.spreadsheetId);
+    return parsed;
   } catch (e) {
     return DEFAULT_CONFIG;
   }
@@ -87,7 +129,11 @@ export function getGoogleSheetsConfig(): GoogleSheetsConfig {
 
 // Save configuration
 export function saveGoogleSheetsConfig(config: GoogleSheetsConfig): void {
-  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+  const cleanedConfig = {
+    ...config,
+    spreadsheetId: extractSpreadsheetId(config.spreadsheetId)
+  };
+  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(cleanedConfig));
 }
 
 // Get all submissions
@@ -114,7 +160,7 @@ export async function submitToGoogleSheetsWebhook(config: GoogleSheetsConfig, su
       id: submission.id,
       timestamp: submission.timestamp,
       formName: submission.formName,
-      spreadsheetId: config.spreadsheetId,
+      spreadsheetId: extractSpreadsheetId(config.spreadsheetId),
       sheetName: config.sheetName,
       ...submission.payload
     };
@@ -141,14 +187,17 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
   const submissions = getFormSubmissions();
 
   // Create clean formatted payload
-  const cleanPayload: Record<string, any> = {};
+  const initialClean: Record<string, any> = {};
   Object.entries(rawPayload).forEach(([key, val]) => {
     // Exclude react synthetic event elements, secrets or consent checkboxes if needed, or clean up key names
     const cleanKey = key.replace(/[:*]/g, '').trim();
     if (cleanKey && cleanKey !== 'consent' && cleanKey !== 'password' && typeof val !== 'function') {
-      cleanPayload[cleanKey] = typeof val === 'boolean' ? (val ? 'Yes' : 'No') : val;
+      initialClean[cleanKey] = typeof val === 'boolean' ? (val ? 'Yes' : 'No') : val;
     }
   });
+
+  // Normalize keys to align precisely with user-defined Google Sheet column headers
+  const cleanPayload = normalizePayloadKeys(initialClean);
 
   const newSubmission: GoogleSheetSubmission = {
     id: 'lead-' + Math.random().toString(36).substring(2, 9),
@@ -232,7 +281,15 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     
     // 1. Open the spreadsheet using the ID provided or default
-    var spreadsheetId = data.spreadsheetId || SpreadsheetApp.getActiveSpreadsheet().getId();
+    var rawSpreadsheetId = data.spreadsheetId || SpreadsheetApp.getActiveSpreadsheet().getId();
+    
+    // In case the full URL was passed in, extract the clean ID
+    var spreadsheetId = rawSpreadsheetId;
+    var urlMatch = rawSpreadsheetId.match(/\\/spreadsheets\\/d\\/([a-zA-Z0-9-_]+)/);
+    if (urlMatch && urlMatch[1]) {
+      spreadsheetId = urlMatch[1];
+    }
+    
     var sheetName = data.sheetName || "FormLeads";
     
     var ss = SpreadsheetApp.openById(spreadsheetId);
@@ -241,34 +298,47 @@ function doPost(e) {
     // If the sheet doesn't exist, create it with nice headers
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
-      sheet.appendRow(["ID", "Timestamp", "Form Source", "Field Data"]);
+      sheet.appendRow(["ID", "Timestamp", "Form Source", "Full Name", "Corporate Email", "Mobile Contact Number", "Organization", "Message"]);
       // Style headers
-      var headerRange = sheet.getRange(1, 1, 1, 4);
+      var headerRange = sheet.getRange(1, 1, 1, 8);
       headerRange.setBackground("#110B33");
       headerRange.setFontColor("#00C2FF");
       headerRange.setFontWeight("bold");
     }
 
-    // 2. Map payload keys to dynamic column headers to build a professional relational grid
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var rowData = new Array(headers.length).fill("");
+    // 2. Map payload keys to dynamic column headers case-insensitively with trim
+    var headersRaw = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var headersLower = headersRaw.map(function(h) {
+      return String(h).trim().toLowerCase();
+    });
     
-    // Ensure "ID", "Timestamp", "Form Source" exist as standard columns
-    rowData[headers.indexOf("ID")] = data.id || "";
-    rowData[headers.indexOf("Timestamp")] = data.timestamp || new Date().toISOString();
-    rowData[headers.indexOf("Form Source")] = data.formName || "General Form";
+    var rowData = new Array(headersRaw.length).fill("");
+    
+    // Populate Standard Fields
+    var idIndex = headersLower.indexOf("id");
+    if (idIndex !== -1) rowData[idIndex] = data.id || "";
+    
+    var tsIndex = headersLower.indexOf("timestamp");
+    if (tsIndex !== -1) rowData[tsIndex] = data.timestamp || new Date().toISOString();
+    
+    var fsIndex = headersLower.indexOf("form source");
+    if (fsIndex === -1) fsIndex = headersLower.indexOf("formname");
+    if (fsIndex !== -1) rowData[fsIndex] = data.formName || "General Form";
 
-    // Loop through additional payload fields and add them dynamically
-    var payloadFields = [];
+    // Loop through additional payload fields and map them to columns
     for (var key in data) {
       if (key !== "id" && key !== "timestamp" && key !== "formName" && key !== "spreadsheetId" && key !== "sheetName") {
-        var colIndex = headers.indexOf(key);
+        var cleanKey = key.trim();
+        var lowerKey = cleanKey.toLowerCase();
+        var colIndex = headersLower.indexOf(lowerKey);
+        
         if (colIndex === -1) {
-          // Add a new column to the spreadsheet if it does not exist yet!
+          // If column doesn't exist, append new column dynamically
           sheet.insertColumnAfter(sheet.getLastColumn());
-          sheet.getRange(1, sheet.getLastColumn() + 1).setValue(key)
+          var newColNum = sheet.getLastColumn() + 1;
+          sheet.getRange(1, newColNum).setValue(cleanKey)
                .setBackground("#110B33").setFontColor("#00C2FF").setFontWeight("bold");
-          headers.push(key);
+          headersLower.push(lowerKey);
           rowData.push(data[key]);
         } else {
           rowData[colIndex] = data[key];
