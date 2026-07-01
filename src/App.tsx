@@ -307,26 +307,125 @@ export default function App() {
         if (input.type === 'submit' || input.type === 'button') return;
         
         let fieldName = input.name || input.id;
+        
+        // 1. Resolve fieldName via label element
         if (!fieldName) {
-          // Look for preceding or adjacent labels
-          const parent = input.parentElement;
-          const label = parent?.querySelector('label') || form.querySelector(`label[for="${input.id}"]`);
-          if (label) {
-            fieldName = label.textContent?.trim() || '';
-          } else {
-            const prevSibling = parent?.previousElementSibling;
-            if (prevSibling && prevSibling.tagName === 'LABEL') {
-              fieldName = prevSibling.textContent?.trim() || '';
+          const closestLabel = input.closest('label');
+          if (closestLabel) {
+            fieldName = closestLabel.textContent?.replace(input.value || '', '')?.trim() || '';
+          }
+        }
+        
+        if (!fieldName) {
+          let current: HTMLElement | null = input;
+          for (let i = 0; i < 3; i++) {
+            if (!current) break;
+            
+            let sibling = current.previousElementSibling;
+            while (sibling) {
+              if (sibling.tagName === 'LABEL') {
+                fieldName = sibling.textContent?.trim() || '';
+                break;
+              }
+              const nestedLabel = sibling.querySelector('label');
+              if (nestedLabel) {
+                fieldName = nestedLabel.textContent?.trim() || '';
+                break;
+              }
+              sibling = sibling.previousElementSibling;
             }
+            if (fieldName) break;
+            
+            const parentLabel = current.parentElement?.querySelector('label');
+            if (parentLabel) {
+              fieldName = parentLabel.textContent?.trim() || '';
+              break;
+            }
+            
+            current = current.parentElement;
           }
         }
         
         if (!fieldName) {
           fieldName = ('placeholder' in input ? (input as HTMLInputElement).placeholder : '') || input.type || 'field';
         }
-        
-        // Clean name
+
+        // Clean initial fieldName
         fieldName = fieldName.replace(/[:*]/g, '').trim();
+
+        // 2. Apply heuristics to classify standard business CRM fields accurately, overriding placeholder fallbacks
+        const placeholderLower = (('placeholder' in input ? (input as HTMLInputElement).placeholder : '') || '').toLowerCase();
+        const typeLower = (input.type || '').toLowerCase();
+        const idLower = (input.id || '').toLowerCase();
+        const nameLower = (input.name || '').toLowerCase();
+        const fieldNameLower = fieldName.toLowerCase();
+
+        let inferredType = '';
+        if (
+          typeLower === 'email' || 
+          placeholderLower.includes('email') || 
+          placeholderLower.includes('@') || 
+          idLower.includes('email') || 
+          nameLower.includes('email') ||
+          fieldNameLower.includes('email')
+        ) {
+          inferredType = 'Corporate Email';
+        } else if (
+          typeLower === 'tel' || 
+          placeholderLower.includes('phone') || 
+          placeholderLower.includes('mobile') || 
+          placeholderLower.includes('contact') || 
+          placeholderLower.includes('tel') || 
+          idLower.includes('phone') || 
+          nameLower.includes('phone') || 
+          idLower.includes('tel') || 
+          nameLower.includes('tel') ||
+          fieldNameLower.includes('phone') ||
+          fieldNameLower.includes('tel') ||
+          fieldNameLower.includes('mobile') ||
+          fieldNameLower.includes('contact')
+        ) {
+          inferredType = 'Mobile Contact Number';
+        } else if (
+          placeholderLower.includes('full name') || 
+          placeholderLower.includes('your name') || 
+          idLower.includes('name') || 
+          nameLower.includes('name') ||
+          fieldNameLower.includes('name')
+        ) {
+          inferredType = 'Full Name';
+        } else if (
+          placeholderLower.includes('company') || 
+          placeholderLower.includes('business') || 
+          placeholderLower.includes('organization') || 
+          placeholderLower.includes('firm') || 
+          idLower.includes('company') || 
+          nameLower.includes('company') || 
+          idLower.includes('business') || 
+          nameLower.includes('business') ||
+          fieldNameLower.includes('company') ||
+          fieldNameLower.includes('business') ||
+          fieldNameLower.includes('organization') ||
+          fieldNameLower.includes('firm')
+        ) {
+          inferredType = 'Organization';
+        } else if (
+          placeholderLower.includes('message') || 
+          placeholderLower.includes('requirement') || 
+          placeholderLower.includes('enquiry') || 
+          placeholderLower.includes('tell us') || 
+          idLower.includes('message') || 
+          nameLower.includes('message') ||
+          fieldNameLower.includes('message') ||
+          fieldNameLower.includes('enquiry') ||
+          fieldNameLower.includes('requirement')
+        ) {
+          inferredType = 'Message';
+        }
+
+        if (inferredType) {
+          fieldName = inferredType;
+        }
         
         if (input instanceof HTMLInputElement && (input.type === 'checkbox' || input.type === 'radio')) {
           if (input.type === 'checkbox') {

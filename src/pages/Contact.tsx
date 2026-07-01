@@ -122,9 +122,11 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Full Name</label>
+                      <label htmlFor="name" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Full Name</label>
                       <input
                         type="text"
+                        id="name"
+                        name="name"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         className={`w-full p-2.5 text-xs rounded-lg border focus:outline-none focus:border-primary ${
@@ -136,9 +138,11 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
                     </div>
 
                     <div>
-                      <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Corporate Email</label>
+                      <label htmlFor="email" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Corporate Email</label>
                       <input
                         type="email"
+                        id="email"
+                        name="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         placeholder="john@acme.co"
@@ -153,9 +157,11 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Mobile Contact Number</label>
+                      <label htmlFor="phone" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Mobile Contact Number</label>
                       <input
                         type="tel"
+                        id="phone"
+                        name="phone"
                         value={formData.phone}
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         placeholder="+91 99999 99999"
@@ -168,8 +174,10 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
                     </div>
 
                     <div>
-                      <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Your Industry Segment</label>
+                      <label htmlFor="industry" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Your Industry Segment</label>
                       <select
+                        id="industry"
+                        name="industry"
                         value={formData.industry}
                         onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
                         className={`w-full p-2.5 text-xs rounded-lg border focus:outline-none ${darkMode ? 'bg-dark border-white/10 text-white' : 'bg-white border-gray-200 text-[#081120]'}`}
@@ -185,8 +193,10 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
                   </div>
 
                   <div>
-                    <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Primary Automation Requirement</label>
+                    <label htmlFor="requirement" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Primary Automation Requirement</label>
                     <select
+                      id="requirement"
+                      name="requirement"
                       value={formData.requirement}
                       onChange={(e) => setFormData({ ...formData, requirement: e.target.value })}
                       className={`w-full p-2.5 text-xs rounded-lg border focus:outline-none ${darkMode ? 'bg-dark border-white/10 text-white' : 'bg-white border-gray-200 text-[#081120]'}`}
@@ -199,8 +209,10 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
                   </div>
 
                   <div>
-                    <label className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Strategic Message</label>
+                    <label htmlFor="message" className="text-[10px] uppercase font-mono text-gray-500 block mb-1">Strategic Message</label>
                     <textarea
+                      id="message"
+                      name="message"
                       value={formData.message}
                       onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                       placeholder="Tell us about your current operational leaks or CRM goals..."

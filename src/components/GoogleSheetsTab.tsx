@@ -16,7 +16,10 @@ import {
   Info,
   Server,
   X,
-  AlertTriangle
+  AlertTriangle,
+  LogIn,
+  LogOut,
+  Sparkles
 } from 'lucide-react';
 import { 
   getGoogleSheetsConfig, 
@@ -28,8 +31,17 @@ import {
   convertToCSV, 
   GOOGLE_APPS_SCRIPT_CODE,
   GoogleSheetSubmission,
-  GoogleSheetsConfig
+  GoogleSheetsConfig,
+  submitToGoogleSheetsDirectly,
+  extractSpreadsheetId
 } from '../utils/googleSheets';
+import {
+  initAuth,
+  googleSignIn,
+  logout,
+  getAccessToken
+} from '../utils/googleAuth';
+import { User } from 'firebase/auth';
 
 export default function GoogleSheetsTab() {
   const [config, setConfig] = useState<GoogleSheetsConfig>({
@@ -45,11 +57,106 @@ export default function GoogleSheetsTab() {
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [selectedSubmission, setSelectedSubmission] = useState<GoogleSheetSubmission | null>(null);
 
-  // Load configuration and submissions on mount
+  // Google OAuth States
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
+  const [spreadsheetTitle, setSpreadsheetTitle] = useState<string | null>(null);
+  const [isFetchingTitle, setIsFetchingTitle] = useState(false);
+
+  // Load configuration and submissions on mount, and initialize Auth
   useEffect(() => {
     setConfig(getGoogleSheetsConfig());
     setSubmissions(getFormSubmissions());
+
+    const unsubscribe = initAuth(
+      async (firebaseUser, cachedToken) => {
+        setUser(firebaseUser);
+        setToken(cachedToken);
+      },
+      () => {
+        setUser(null);
+        setToken(null);
+        setSpreadsheetTitle(null);
+      }
+    );
+
+    // Try to pre-load access token if user is signed in but token was not loaded yet
+    getAccessToken().then(cachedToken => {
+      if (cachedToken) {
+        setToken(cachedToken);
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
+
+  // Fetch the actual Google Spreadsheet Title from Google Sheets API when token is active
+  useEffect(() => {
+    if (!token || !config.spreadsheetId) {
+      setSpreadsheetTitle(null);
+      return;
+    }
+
+    const fetchSheetTitle = async () => {
+      setIsFetchingTitle(true);
+      try {
+        const sheetId = extractSpreadsheetId(config.spreadsheetId);
+        if (!sheetId) {
+          setSpreadsheetTitle(null);
+          return;
+        }
+        const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.properties?.title) {
+            setSpreadsheetTitle(data.properties.title);
+          } else {
+            setSpreadsheetTitle(null);
+          }
+        } else {
+          setSpreadsheetTitle(null);
+        }
+      } catch (err) {
+        console.error('Error fetching spreadsheet title:', err);
+        setSpreadsheetTitle(null);
+      } finally {
+        setIsFetchingTitle(false);
+      }
+    };
+
+    fetchSheetTitle();
+  }, [token, config.spreadsheetId]);
+
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setUser(result.user);
+        setToken(result.accessToken);
+      }
+    } catch (err) {
+      console.error('Google Sign-In failed:', err);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setUser(null);
+      setToken(null);
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,12 +187,24 @@ export default function GoogleSheetsTab() {
   };
 
   const handleTriggerSync = async (submission: GoogleSheetSubmission) => {
-    if (!config.webhookUrl) {
-      alert('Please configure a valid Google Apps Script Webhook URL first in the Settings panel!');
-      return;
-    }
+    let result: 'success' | 'failed' = 'failed';
     setSyncingId(submission.id);
-    const result = await submitToGoogleSheetsWebhook(config, submission);
+
+    if (token) {
+      if (!config.spreadsheetId) {
+        alert('Please configure your Target Spreadsheet ID first!');
+        setSyncingId(null);
+        return;
+      }
+      result = await submitToGoogleSheetsDirectly(config, submission, token);
+    } else {
+      if (!config.webhookUrl) {
+        alert('Please connect your Google Account or configure a valid Google Apps Script Webhook URL first!');
+        setSyncingId(null);
+        return;
+      }
+      result = await submitToGoogleSheetsWebhook(config, submission);
+    }
     
     // Update local state to reflect new sync status
     const updated = submissions.map(s => {
@@ -97,6 +216,63 @@ export default function GoogleSheetsTab() {
     setSubmissions(updated);
     localStorage.setItem('natton_google_sheets_submissions', JSON.stringify(updated));
     setSyncingId(null);
+  };
+
+  const handleBulkSync = async () => {
+    if (!token && !config.webhookUrl) {
+      alert('Please connect your Google Account or configure a Google Apps Script Webhook URL first!');
+      return;
+    }
+    if (token && !config.spreadsheetId) {
+      alert('Please enter a Target Spreadsheet ID in the parameters card first!');
+      return;
+    }
+    const unsynced = submissions.filter(s => s.syncStatus !== 'success');
+    if (unsynced.length === 0) {
+      alert('All submissions in the logs are already successfully synced!');
+      return;
+    }
+
+    const modeText = token ? 'directly via Google Sheets API' : 'via Google Apps Script Webhook';
+    const destText = token ? `Google Sheet: "${config.sheetName || 'FormLeads'}"` : 'your configured Webhook';
+
+    if (window.confirm(`Do you want to bulk-write ${unsynced.length} unsynced form submissions ${modeText} into ${destText}?`)) {
+      setIsBulkSyncing(true);
+      let successCount = 0;
+      let failedCount = 0;
+
+      let currentSubmissions = [...submissions];
+
+      for (const sub of unsynced) {
+        setSyncingId(sub.id);
+        let result: 'success' | 'failed' = 'failed';
+        
+        if (token) {
+          result = await submitToGoogleSheetsDirectly(config, sub, token);
+        } else if (config.webhookUrl) {
+          result = await submitToGoogleSheetsWebhook(config, sub);
+        }
+
+        if (result === 'success') {
+          successCount++;
+        } else {
+          failedCount++;
+        }
+
+        currentSubmissions = currentSubmissions.map(s => {
+          if (s.id === sub.id) {
+            return { ...s, syncStatus: result };
+          }
+          return s;
+        });
+        setSubmissions(currentSubmissions);
+        localStorage.setItem('natton_google_sheets_submissions', JSON.stringify(currentSubmissions));
+      }
+
+      setSyncingId(null);
+      setIsBulkSyncing(false);
+      alert(`Bulk sync completed successfully! ${successCount} row(s) added, ${failedCount} row(s) failed.`);
+    }
   };
 
   const handleDownloadCSV = () => {
@@ -142,13 +318,13 @@ export default function GoogleSheetsTab() {
           <div className="space-y-1">
             <span className="text-[10px] font-mono text-gray-500 uppercase">Automation Status</span>
             <div className="flex items-center gap-1.5 mt-1">
-              <div className={`w-2 h-2 rounded-full ${config.webhookUrl ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <div className={`w-2 h-2 rounded-full ${user || config.webhookUrl ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
               <span className="text-xs font-mono font-bold text-white">
-                {config.webhookUrl ? 'Live Apps Script' : 'Simulated (Offline)'}
+                {user ? 'Real-time API Sync' : config.webhookUrl ? 'Live Webhook Sync' : 'Simulated (Offline)'}
               </span>
             </div>
           </div>
-          <div className={`p-3 rounded-xl ${config.webhookUrl ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+          <div className={`p-3 rounded-xl ${user || config.webhookUrl ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
             <Server className="h-5 w-5" />
           </div>
         </div>
@@ -161,6 +337,72 @@ export default function GoogleSheetsTab() {
           <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400">
             <FileSpreadsheet className="h-5 w-5" />
           </div>
+        </div>
+      </div>
+
+      {/* Google Account Authentication Panel */}
+      <div className="p-5 rounded-3xl border border-[#00C2FF]/20 bg-gradient-to-r from-blue-950/20 via-[#0B0721]/50 to-purple-950/20 backdrop-blur-md flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5 text-left">
+          {user ? (
+            <div className="relative shrink-0">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'Google User'} referrerPolicy="no-referrer" className="w-12 h-12 rounded-full border-2 border-emerald-500" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white font-bold text-lg uppercase border-2 border-emerald-400">
+                  {user.displayName?.slice(0, 2) || 'GU'}
+                </div>
+              )}
+              <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#0B0721] animate-pulse" />
+            </div>
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-[#110B33] border border-white/10 flex items-center justify-center text-gray-400 shrink-0">
+              <FileSpreadsheet className="w-6 h-6 text-[#00C2FF]" />
+            </div>
+          )}
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              {user ? 'Google Workspace Connection Active' : 'Enable Real-time Direct Google Sheets Sync'}
+              {user && (
+                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-mono">
+                  OAuth Active
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-gray-400 max-w-xl">
+              {user 
+                ? `Successfully connected as ${user.displayName} (${user.email}). All incoming forms write directly to Google Sheets using the Sheets REST API.`
+                : 'Connect your Google account via secure Google OAuth. Once linked, all form submissions will append directly to your target Spreadsheet in real time, bypassing webhooks!'}
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          {user ? (
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/20 text-rose-400 text-xs font-mono flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <LogOut className="h-4 w-4" /> Disconnect Account
+            </button>
+          ) : (
+            <button
+              onClick={handleLogin}
+              disabled={isLoggingIn}
+              className="font-mono text-xs font-bold bg-white text-gray-900 px-4 py-2.5 rounded-xl hover:bg-gray-100 transition-all flex items-center gap-2 shadow-lg cursor-pointer disabled:opacity-50"
+            >
+              {isLoggingIn ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-gray-600" />
+              ) : (
+                <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="h-4 w-4 shrink-0">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                </svg>
+              )}
+              {isLoggingIn ? 'Connecting...' : 'Connect Google Sheets'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -178,6 +420,20 @@ export default function GoogleSheetsTab() {
               </div>
 
               <div className="flex gap-2">
+                {(token || config.webhookUrl) && (
+                  <button
+                    onClick={handleBulkSync}
+                    disabled={isBulkSyncing || submissions.length === 0}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white"
+                  >
+                    {isBulkSyncing ? (
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3 text-emerald-400" />
+                    )}
+                    Bulk Sync Unsynced
+                  </button>
+                )}
                 <button
                   onClick={handleDownloadCSV}
                   disabled={submissions.length === 0}
@@ -275,12 +531,12 @@ export default function GoogleSheetsTab() {
                           </td>
                           <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-1.5">
-                              {config.webhookUrl && (
+                              {(config.webhookUrl || token) && (
                                 <button
                                   onClick={() => handleTriggerSync(sub)}
                                   disabled={syncingId === sub.id}
                                   className="p-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all"
-                                  title="Repush to Google Sheet Webhook"
+                                  title={token ? "Push to Google Sheets directly" : "Repush to Google Sheet Webhook"}
                                 >
                                   {syncingId === sub.id ? (
                                     <RefreshCw className="h-3 w-3 animate-spin" />
@@ -328,6 +584,21 @@ export default function GoogleSheetsTab() {
                   className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
                   required
                 />
+                {isFetchingTitle ? (
+                  <span className="text-[9px] text-gray-500 mt-1 block animate-pulse">Loading spreadsheet properties...</span>
+                ) : spreadsheetTitle ? (
+                  <span className="text-[10px] text-emerald-400 font-medium mt-1 block">Live Spreadsheet: <strong className="font-bold">"{spreadsheetTitle}"</strong></span>
+                ) : null}
+                {config.spreadsheetId && (
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${extractSpreadsheetId(config.spreadsheetId)}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-[#00C2FF] hover:underline mt-1.5 flex items-center gap-1 font-mono"
+                  >
+                    <span>↗ Open sheet in Google Sheets</span>
+                  </a>
+                )}
               </div>
 
               <div>
@@ -463,7 +734,7 @@ export default function GoogleSheetsTab() {
               >
                 Close Details
               </button>
-              {config.webhookUrl && (
+              {(config.webhookUrl || token) && (
                 <button
                   onClick={() => {
                     handleTriggerSync(selectedSubmission);

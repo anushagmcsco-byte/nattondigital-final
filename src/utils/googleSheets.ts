@@ -1,4 +1,5 @@
 import { RoutePath } from '../types';
+import { getAccessToken } from './googleAuth';
 
 export interface GoogleSheetSubmission {
   id: string;
@@ -90,15 +91,61 @@ export function normalizePayloadKeys(payload: Record<string, any>): Record<strin
   Object.entries(payload).forEach(([key, val]) => {
     const k = key.trim().toLowerCase();
     
-    if (k === 'name' || k === 'full name' || k === 'contact name' || k === 'your name' || k === 'customer name') {
+    if (
+      k === 'name' || 
+      k === 'full name' || 
+      k === 'contact name' || 
+      k === 'your name' || 
+      k === 'customer name' || 
+      k.includes('name')
+    ) {
       normalized['Full Name'] = val;
-    } else if (k === 'email' || k === 'corporate email' || k === 'email address' || k === 'company email') {
+    } else if (
+      k === 'email' || 
+      k === 'corporate email' || 
+      k === 'email address' || 
+      k === 'company email' || 
+      k === 'work email' ||
+      k.includes('email')
+    ) {
       normalized['Corporate Email'] = val;
-    } else if (k === 'phone' || k === 'mobile contact number' || k === 'contact number' || k === 'phone number' || k === 'mobile' || k === 'telephone') {
+    } else if (
+      k === 'phone' || 
+      k === 'mobile contact number' || 
+      k === 'contact number' || 
+      k === 'phone number' || 
+      k === 'mobile' || 
+      k === 'telephone' || 
+      k.includes('phone') || 
+      k.includes('tel') || 
+      k.includes('mobile') || 
+      k.includes('contact')
+    ) {
       normalized['Mobile Contact Number'] = val;
-    } else if (k === 'organization' || k === 'company name' || k === 'company' || k === 'firm' || k === 'enterprise') {
+    } else if (
+      k === 'organization' || 
+      k === 'company name' || 
+      k === 'company' || 
+      k === 'firm' || 
+      k === 'enterprise' || 
+      k === 'business name' ||
+      k.includes('company') || 
+      k.includes('organization') || 
+      k.includes('business') || 
+      k.includes('industry') ||
+      k.includes('firm')
+    ) {
       normalized['Organization'] = val;
-    } else if (k === 'message' || k === 'strategic message' || k === 'your message' || k === 'requirement description' || k === 'enquiry') {
+    } else if (
+      k === 'message' || 
+      k === 'strategic message' || 
+      k === 'your message' || 
+      k === 'requirement description' || 
+      k === 'enquiry' || 
+      k.includes('message') || 
+      k.includes('enquiry') || 
+      k.includes('requirement')
+    ) {
       normalized['Message'] = val;
     } else {
       // Keep other custom fields as they are, stripping colons or asterisks
@@ -181,6 +228,143 @@ export async function submitToGoogleSheetsWebhook(config: GoogleSheetsConfig, su
   }
 }
 
+export function getColLetter(colIndex: number): string {
+  let letter = '';
+  let temp = colIndex;
+  while (temp >= 0) {
+    letter = String.fromCharCode((temp % 26) + 65) + letter;
+    temp = Math.floor(temp / 26) - 1;
+  }
+  return letter;
+}
+
+export async function submitToGoogleSheetsDirectly(
+  config: GoogleSheetsConfig,
+  submission: GoogleSheetSubmission,
+  accessToken: string
+): Promise<'success' | 'failed'> {
+  const spreadsheetId = extractSpreadsheetId(config.spreadsheetId);
+  const sheetName = config.sheetName || 'FormLeads';
+  if (!spreadsheetId) return 'failed';
+
+  try {
+    let headersRaw = ["ID", "Timestamp", "Form Source", "Full Name", "Corporate Email", "Mobile Contact Number", "Organization", "Message"];
+    
+    // 1. Get the first row (headers) to see if sheet exists and what columns it has
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!1:1`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.values && data.values[0] && data.values[0].length > 0) {
+        headersRaw = data.values[0];
+      } else {
+        // Empty sheet, write headers
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ values: [headersRaw] })
+        });
+      }
+    } else if (res.status === 400 || res.status === 404) {
+      // Sheet probably doesn't exist, create it
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          requests: [{ addSheet: { properties: { title: sheetName } } }]
+        })
+      });
+      
+      // Write headers
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ values: [headersRaw] })
+      });
+    } else {
+      return 'failed';
+    }
+
+    // 2. Identify missing headers and add them
+    const headersLower = headersRaw.map(h => String(h).trim().toLowerCase());
+    const newHeadersToAppend: string[] = [];
+
+    Object.keys(submission.payload).forEach(key => {
+      const cleanKey = key.trim();
+      const lowerKey = cleanKey.toLowerCase();
+      if (headersLower.indexOf(lowerKey) === -1) {
+        newHeadersToAppend.push(cleanKey);
+      }
+    });
+
+    for (const key of newHeadersToAppend) {
+      const nextColLetter = getColLetter(headersRaw.length);
+      const cellAddress = `${nextColLetter}1`;
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!${cellAddress}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ values: [[key]] })
+      });
+      headersRaw.push(key);
+      headersLower.push(key.toLowerCase());
+    }
+
+    // 3. Build the row to append
+    const rowData = new Array(headersRaw.length).fill("");
+
+    const idIndex = headersLower.indexOf("id");
+    if (idIndex !== -1) rowData[idIndex] = submission.id;
+
+    const tsIndex = headersLower.indexOf("timestamp");
+    if (tsIndex !== -1) rowData[tsIndex] = submission.timestamp;
+
+    let fsIndex = headersLower.indexOf("form source");
+    if (fsIndex === -1) fsIndex = headersLower.indexOf("formname");
+    if (fsIndex !== -1) rowData[fsIndex] = submission.formName;
+
+    Object.entries(submission.payload).forEach(([key, val]) => {
+      const cleanKey = key.trim();
+      const lowerKey = cleanKey.toLowerCase();
+      const idx = headersLower.indexOf(lowerKey);
+      if (idx !== -1) {
+        rowData[idx] = typeof val === 'object' ? JSON.stringify(val) : val;
+      }
+    });
+
+    // 4. Append row
+    const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:append?valueInputOption=USER_ENTERED`, {
+      method: 'POST',
+      headers: { 
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ values: [rowData] })
+    });
+
+    if (appendRes.ok) {
+      return 'success';
+    }
+    return 'failed';
+  } catch (error) {
+    console.error('Direct Google Sheet Sync Error:', error);
+    return 'failed';
+  }
+}
+
 // Save new form submission
 export async function registerFormSubmission(formName: string, rawPayload: Record<string, any>): Promise<GoogleSheetSubmission> {
   const config = getGoogleSheetsConfig();
@@ -204,10 +388,14 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
     timestamp: new Date().toISOString(),
     formName: formName,
     payload: cleanPayload,
-    syncStatus: config.webhookUrl ? 'failed' : 'simulated'
+    syncStatus: 'simulated'
   };
 
-  if (config.webhookUrl) {
+  const accessToken = await getAccessToken();
+  if (accessToken) {
+    const status = await submitToGoogleSheetsDirectly(config, newSubmission, accessToken);
+    newSubmission.syncStatus = status;
+  } else if (config.webhookUrl) {
     const status = await submitToGoogleSheetsWebhook(config, newSubmission);
     newSubmission.syncStatus = status;
   }

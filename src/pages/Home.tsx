@@ -714,9 +714,11 @@ export default function Home({ setPath, darkMode }: HomeProps) {
               <form onSubmit={handleConsultSubmit} className="space-y-4 font-sans text-left">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Your Name</label>
+                    <label htmlFor="home-name" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Your Name</label>
                     <input
                       type="text"
+                      id="home-name"
+                      name="name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Anusha S."
@@ -727,9 +729,11 @@ export default function Home({ setPath, darkMode }: HomeProps) {
                     />
                   </div>
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Business Name</label>
+                    <label htmlFor="home-company" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Business Name</label>
                     <input
                       type="text"
+                      id="home-company"
+                      name="company"
                       value={formData.businessName}
                       onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
                       placeholder="Acme Enterprise"
@@ -743,9 +747,11 @@ export default function Home({ setPath, darkMode }: HomeProps) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Work Email</label>
+                    <label htmlFor="home-email" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Work Email</label>
                     <input
                       type="email"
+                      id="home-email"
+                      name="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="corporate@acme.co"
@@ -756,9 +762,11 @@ export default function Home({ setPath, darkMode }: HomeProps) {
                     />
                   </div>
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Phone Number</label>
+                    <label htmlFor="home-phone" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Phone Number</label>
                     <input
                       type="tel"
+                      id="home-phone"
+                      name="phone"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="+91 / +1 ..."
@@ -772,8 +780,10 @@ export default function Home({ setPath, darkMode }: HomeProps) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Industry</label>
+                    <label htmlFor="home-industry" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Industry</label>
                     <select
+                      id="home-industry"
+                      name="industry"
                       value={formData.industry}
                       onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
                       className={`w-full p-2.5 text-xs rounded-lg border focus:outline-none focus:border-primary ${
@@ -789,8 +799,10 @@ export default function Home({ setPath, darkMode }: HomeProps) {
                     </select>
                   </div>
                   <div>
-                    <label className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Monthly Revenue</label>
+                    <label htmlFor="home-revenue" className={`text-[10px] uppercase font-mono block mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Monthly Revenue</label>
                     <select
+                      id="home-revenue"
+                      name="revenue"
                       value={formData.monthlyRevenue}
                       onChange={(e) => setFormData({ ...formData, monthlyRevenue: e.target.value })}
                       className={`w-full p-2.5 text-xs rounded-lg border focus:outline-none focus:border-primary ${
