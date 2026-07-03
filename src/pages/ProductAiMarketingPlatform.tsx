@@ -442,7 +442,7 @@ The "10-step glass skin routine" was a marketing masterpiece invented to sell 10
   ];
 
   return (
-    <div className="bg-[#04020F] text-white py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-purple-500 selection:text-white">
+    <div className={`py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-purple-500 selection:text-white ${propDarkMode ? 'bg-[#04020F] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Orbs */}
       <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-purple-900/10 rounded-full blur-[160px] pointer-events-none -z-10" />

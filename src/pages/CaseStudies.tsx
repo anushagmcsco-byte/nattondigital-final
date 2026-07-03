@@ -419,7 +419,7 @@ export default function CaseStudies({ setPath, darkMode }: { setPath: (path: Rou
   };
 
   return (
-    <div className="bg-[#030512] text-slate-200 min-h-screen py-10 overflow-hidden relative selection:bg-purple-600 selection:text-white">
+    <div className={`min-h-screen py-10 overflow-hidden relative selection:bg-purple-600 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#030512] text-slate-200' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background decoration gradients */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-900/10 rounded-full blur-[140px] pointer-events-none -z-10" />

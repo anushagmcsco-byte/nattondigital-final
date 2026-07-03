@@ -22,11 +22,11 @@ export default function Products({ subPath, setPath, darkMode }: ProductsProps) 
   }
 
   if (subPath === 'business-os' || subPath === 'businessos') {
-    return <ProductBusinessOs setPath={setPath} />;
+    return <ProductBusinessOs setPath={setPath} darkMode={darkMode} />;
   }
 
   if (subPath === 'agentic-os' || subPath === 'agenticos') {
-    return <ProductAgenticOs setPath={setPath} />;
+    return <ProductAgenticOs setPath={setPath} darkMode={darkMode} />;
   }
 
   // Products specs data

@@ -211,7 +211,7 @@ export default function About({ setPath, darkMode }: AboutProps) {
   };
 
   return (
-    <div className="bg-[#110B33] text-white min-h-screen font-sans antialiased text-left selection:bg-primary/30 selection:text-white">
+    <div className={`min-h-screen font-sans antialiased text-left selection:bg-primary/30 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#110B33] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* 1. HERO SECTION WITH DIGITAL UNIVERSE INTERACTIVE GRAPHIC */}
       <section className="relative pt-24 pb-20 overflow-hidden border-b border-white/10 bg-gradient-to-br from-indigo-950/40 via-[#110B33] to-purple-950/20">

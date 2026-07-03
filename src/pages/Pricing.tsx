@@ -306,7 +306,7 @@ export default function Pricing({ setPath, darkMode }: PricingProps) {
   };
 
   return (
-    <div id="pricing-root" className="relative min-h-screen font-sans bg-[#0A042A] text-white overflow-hidden py-12 md:py-20 select-none">
+    <div id="pricing-root" className={`relative min-h-screen font-sans overflow-hidden py-12 md:py-20 select-none transition-colors duration-500 ${darkMode ? 'bg-[#0A042A] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       {/* Background Animated Gradient Mesh / Universe */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-45">
         <div className="absolute top-[-10%] left-[-15%] w-[60%] h-[60%] rounded-full bg-gradient-to-br from-primary/30 to-purple-600/30 blur-[130px] animate-pulse" style={{ animationDuration: '10s' }} />

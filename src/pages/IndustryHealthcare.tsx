@@ -629,7 +629,7 @@ export default function IndustryHealthcare({ setPath, darkMode }: { setPath: (pa
   };
 
   return (
-    <div className="bg-[#020514] text-white min-h-screen py-8 overflow-hidden relative selection:bg-teal-500 selection:text-black">
+    <div className={`min-h-screen py-8 overflow-hidden relative selection:bg-teal-500 selection:text-black transition-colors duration-500 ${darkMode ? 'bg-[#020514] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Lighting Orbs */}
       <div className="absolute top-0 right-0 w-[550px] h-[550px] bg-teal-950/20 rounded-full blur-[140px] pointer-events-none -z-10" />

@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { RoutePath } from '../types';
 
-export default function ProductBusinessOs({ setPath }: { setPath: (path: RoutePath) => void }) {
+export default function ProductBusinessOs({ setPath, darkMode }: { setPath: (path: RoutePath) => void; darkMode?: boolean }) {
   useEffect(() => {
     document.title = "BusinessOS™ | Omnichannel Communication & Customer Engagement Platform";
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -442,7 +442,7 @@ export default function ProductBusinessOs({ setPath }: { setPath: (path: RoutePa
   ];
 
   return (
-    <div className="bg-[#03010E] text-white py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-cyan-500 selection:text-white">
+    <div className={`py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-cyan-500 selection:text-white ${darkMode ? 'bg-[#03010E] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Orbs */}
       <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-cyan-950/20 rounded-full blur-[160px] pointer-events-none -z-10" />

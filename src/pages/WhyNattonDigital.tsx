@@ -449,7 +449,7 @@ export default function WhyNattonDigital({ setPath, darkMode }: WhyNattonDigital
   };
 
   return (
-    <div className="bg-[#110B33] text-white min-h-screen font-sans antialiased text-left selection:bg-primary/30 selection:text-white relative">
+    <div className={`min-h-screen font-sans antialiased text-left selection:bg-primary/30 selection:text-white relative transition-colors duration-500 ${darkMode ? 'bg-[#110B33] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Cinematic Gradients & Grids */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,194,255,0.08),transparent_50%)] pointer-events-none" />

@@ -510,7 +510,7 @@ export default function IndustryRetailEcommerce({ setPath, darkMode }: { setPath
   };
 
   return (
-    <div className="bg-[#0b081e] text-slate-100 min-h-screen py-8 overflow-hidden relative selection:bg-purple-600 selection:text-white">
+    <div className={`min-h-screen py-8 overflow-hidden relative selection:bg-purple-600 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#0b081e] text-slate-100' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background radial atmosphere gradients - Purple, Electric Blue & Emerald */}
       <div className="absolute top-0 right-0 w-[550px] h-[550px] bg-purple-900/15 rounded-full blur-[140px] pointer-events-none -z-10" />

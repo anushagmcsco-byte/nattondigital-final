@@ -330,7 +330,7 @@ export default function Compare({ setPath, darkMode }: CompareProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0721] text-white py-16 relative overflow-hidden font-sans">
+    <div className={`min-h-screen py-16 relative overflow-hidden font-sans transition-colors duration-500 ${darkMode ? 'bg-[#0B0721] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       {/* Background glowing gradients (Vercel/Linear style) */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
         <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-500/10 blur-[130px] animate-pulse" />

@@ -701,7 +701,7 @@ export default function IndustryEducation({ setPath, darkMode }: { setPath: (pat
   };
 
   return (
-    <div className="bg-[#030616] text-white min-h-screen py-8 overflow-hidden relative selection:bg-purple-500 selection:text-white">
+    <div className={`min-h-screen py-8 overflow-hidden relative selection:bg-purple-500 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#030616] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Neon Lights */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-sky-950/20 rounded-full blur-[140px] pointer-events-none -z-10" />

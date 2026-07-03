@@ -1,6 +1,27 @@
 import { RoutePath } from '../types';
 import { getAccessToken, db } from './googleAuth';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+
+// In-memory fallback for environments with blocked/disabled third-party storage (like preview iframes)
+const memoryStorage: Record<string, string> = {};
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    console.warn(`localStorage.getItem failed for ${key}, using memory fallback:`, e);
+    return memoryStorage[key] || null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`localStorage.setItem failed for ${key}, using memory fallback:`, e);
+    memoryStorage[key] = value;
+  }
+}
 
 export interface GoogleSheetSubmission {
   id: string;
@@ -33,7 +54,7 @@ const DEFAULT_CONFIG: GoogleSheetsConfig = {
   webhookUrl: '',
   autoSync: true,
   manualToken: '',
-  sheetdbUrl: '',
+  sheetdbUrl: 'https://sheetdb.io/api/v1/col7vhsqwx1pm',
   firebaseCollection: 'leads',
   airtableApiKey: '',
   airtableBaseId: '',
@@ -175,12 +196,15 @@ export function normalizePayloadKeys(payload: Record<string, any>): Record<strin
 // Initialize and get configuration
 export function getGoogleSheetsConfig(): GoogleSheetsConfig {
   try {
-    const config = localStorage.getItem(STORAGE_KEY_CONFIG);
+    const config = safeGetItem(STORAGE_KEY_CONFIG);
     if (!config) {
-      localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(DEFAULT_CONFIG));
+      safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(DEFAULT_CONFIG));
       return DEFAULT_CONFIG;
     }
     const parsed = JSON.parse(config);
+    if (parsed && !parsed.sheetdbUrl) {
+      parsed.sheetdbUrl = DEFAULT_CONFIG.sheetdbUrl;
+    }
     const merged = { ...DEFAULT_CONFIG, ...parsed };
     // Ensure spreadsheet ID is cleaned up
     merged.spreadsheetId = extractSpreadsheetId(merged.spreadsheetId);
@@ -196,15 +220,15 @@ export function saveGoogleSheetsConfig(config: GoogleSheetsConfig): void {
     ...config,
     spreadsheetId: extractSpreadsheetId(config.spreadsheetId)
   };
-  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(cleanedConfig));
+  safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(cleanedConfig));
 }
 
 // Get all submissions
 export function getFormSubmissions(): GoogleSheetSubmission[] {
   try {
-    const data = localStorage.getItem(STORAGE_KEY_SUBMISSIONS);
+    const data = safeGetItem(STORAGE_KEY_SUBMISSIONS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(DEFAULT_SUBMISSIONS));
+      safeSetItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(DEFAULT_SUBMISSIONS));
       return DEFAULT_SUBMISSIONS;
     }
     return JSON.parse(data);
@@ -665,7 +689,7 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
   }
 
   const updatedSubmissions = [newSubmission, ...submissions];
-  localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(updatedSubmissions));
+  safeSetItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(updatedSubmissions));
 
   // Dispatch custom event to notify UI (like floating alerts/toasts)
   window.dispatchEvent(new CustomEvent('natton_google_sheet_sync', {
@@ -679,13 +703,13 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
 export function deleteSubmission(id: string): GoogleSheetSubmission[] {
   const submissions = getFormSubmissions();
   const filtered = submissions.filter(s => s.id !== id);
-  localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(filtered));
+  safeSetItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(filtered));
   return filtered;
 }
 
 // Clear all submissions
 export function clearAllSubmissions(): void {
-  localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify([]));
+  safeSetItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify([]));
 }
 
 // Helper to convert form data to rows for CSV downloads

@@ -588,7 +588,7 @@ curl -X POST "https://api.natton.digital/v1/integrations/trigger" \\
   ];
 
   return (
-    <div className="bg-[#0B0721] text-white min-h-screen font-sans antialiased text-left relative selection:bg-cyan-500/30 selection:text-white pb-24">
+    <div className={`min-h-screen font-sans antialiased text-left relative selection:bg-cyan-500/30 selection:text-white pb-24 transition-colors duration-500 ${darkMode ? 'bg-[#0B0721] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Visual background grids and ambient spheres */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,194,255,0.08),transparent_60%)] pointer-events-none" />

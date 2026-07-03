@@ -240,7 +240,7 @@ export default function SolutionConversationalAi({ setPath, darkMode }: any) {
   ];
 
   return (
-    <div className="bg-[#050215] text-white min-h-screen py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-x-hidden text-left relative selection:bg-primary selection:text-white">
+    <div className={`min-h-screen py-12 px-4 sm:px-6 lg:px-8 font-sans overflow-x-hidden text-left relative selection:bg-primary selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#050215] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       {/* Absolute backgrounds */}
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-gradient-to-br from-primary/15 to-[#00C2FF]/5 rounded-full filter blur-[120px] pointer-events-none z-0" />
       <div className="absolute bottom-1/3 right-10 w-[600px] h-[600px] bg-gradient-to-br from-purple-500/15 to-[#050215]/5 rounded-full filter blur-[140px] pointer-events-none z-0" />

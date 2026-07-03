@@ -490,7 +490,7 @@ export default function BookDemo({ setPath, darkMode }: BookDemoProps) {
   ];
 
   return (
-    <div className="bg-[#110B33] text-white min-h-screen font-sans antialiased text-left relative selection:bg-primary/30 selection:text-white">
+    <div className={`min-h-screen font-sans antialiased text-left relative selection:bg-primary/30 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#110B33] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Cinematic Glowing Background Gradients */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,194,255,0.06),transparent_50%)] pointer-events-none" />

@@ -229,7 +229,7 @@ export default function SolutionCrmAutomation({ setPath, darkMode, formSubmitted
   };
 
   return (
-    <div className="py-12 animate-fade-in font-sans text-left bg-[#110B33] text-white">
+    <div className={`py-12 animate-fade-in font-sans text-left transition-colors duration-500 ${darkMode ? 'bg-[#110B33] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Breadcrumb */}

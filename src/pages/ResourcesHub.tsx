@@ -624,7 +624,7 @@ export default function ResourcesHub({ setPath, darkMode }: ResourcesHubProps) {
   ];
 
   return (
-    <div className="bg-[#0B0721] text-white min-h-screen font-sans antialiased text-left relative selection:bg-emerald-500/30 selection:text-white pb-20">
+    <div className={`min-h-screen font-sans antialiased text-left relative selection:bg-emerald-500/30 selection:text-white pb-20 transition-colors duration-500 ${darkMode ? 'bg-[#0B0721] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Immersive Background Nodes & Gradients */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,194,255,0.06),transparent_50%)] pointer-events-none" />

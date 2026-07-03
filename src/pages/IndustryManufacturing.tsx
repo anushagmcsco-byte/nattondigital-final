@@ -562,7 +562,7 @@ export default function IndustryManufacturing({ setPath, darkMode }: { setPath: 
   };
 
   return (
-    <div className="bg-[#0b1329] text-slate-100 min-h-screen py-8 overflow-hidden relative selection:bg-orange-500 selection:text-black">
+    <div className={`min-h-screen py-8 overflow-hidden relative selection:bg-orange-500 selection:text-black transition-colors duration-500 ${darkMode ? 'bg-[#0b1329] text-slate-100' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Visual background atmospheric elements */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-cyan-900/10 rounded-full blur-[140px] pointer-events-none -z-10" />

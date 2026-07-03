@@ -666,7 +666,7 @@ export default function AiReadinessAssessmentPage({ setPath, darkMode }: { setPa
   };
 
   return (
-    <div className="bg-[#030512] text-slate-200 min-h-screen py-12 overflow-hidden relative selection:bg-purple-600 selection:text-white">
+    <div className={`min-h-screen py-12 overflow-hidden relative selection:bg-purple-600 selection:text-white transition-colors duration-500 ${darkMode ? 'bg-[#030512] text-slate-200' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Decorative Gradients */}
       <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-900/10 rounded-full blur-[140px] pointer-events-none -z-10" />

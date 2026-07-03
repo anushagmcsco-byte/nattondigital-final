@@ -53,7 +53,7 @@ import {
 } from 'lucide-react';
 import { RoutePath } from '../types';
 
-export default function ProductAgenticOs({ setPath }: { setPath: (path: RoutePath) => void }) {
+export default function ProductAgenticOs({ setPath, darkMode }: { setPath: (path: RoutePath) => void; darkMode?: boolean }) {
   useEffect(() => {
     document.title = "AgenticOS™ | Enterprise AI Workforce & Autonomous Multi-Agent Platform";
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -758,7 +758,7 @@ export default function ProductAgenticOs({ setPath }: { setPath: (path: RoutePat
   ];
 
   return (
-    <div className="bg-[#03010E] text-white py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-purple-500 selection:text-white">
+    <div className={`py-12 animate-fade-in font-sans text-left transition-colors duration-500 overflow-hidden relative selection:bg-purple-500 selection:text-white ${darkMode ? 'bg-[#03010E] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       
       {/* Background Orbs */}
       <div className="absolute top-0 left-1/4 w-[700px] h-[700px] bg-purple-950/20 rounded-full blur-[150px] pointer-events-none -z-10" />

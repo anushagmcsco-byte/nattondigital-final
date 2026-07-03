@@ -233,7 +233,7 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
   );
 
   return (
-    <div className="min-h-screen bg-[#110B33] text-white py-12 relative overflow-hidden font-sans">
+    <div className={`min-h-screen py-12 relative overflow-hidden font-sans transition-colors duration-500 ${darkMode ? 'bg-[#110B33] text-white' : 'bg-[#F5F9FA] text-[#110B33]'}`}>
       {/* Background gradients */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-500/15 blur-[120px]" />
