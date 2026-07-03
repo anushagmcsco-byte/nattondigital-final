@@ -6,6 +6,7 @@ import {
   Share2, History, Network, Calendar, Award, Heart, Gift, MessageCircle, FileCheck, Layers, BookOpen, Brain, Gauge, Info
 } from 'lucide-react';
 import { RoutePath } from '../types';
+import { registerFormSubmission } from '../utils/googleSheets';
 
 // ==========================================
 // QUESTIONNAIRE DATA
@@ -415,7 +416,7 @@ export default function AiReadinessAssessmentPage({ setPath, darkMode }: { setPa
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (parseInt(captchaInput) !== (captchaAnswer.n1 + captchaAnswer.n2)) {
       alert('Correct captcha calculation required to generate custom PDF roadmap.');
@@ -428,6 +429,20 @@ export default function AiReadinessAssessmentPage({ setPath, darkMode }: { setPa
       '🔗 Dispatched secure TLS webhook packet to Natton n8n core router...',
       '📥 Registering custom tags in GoHighLevel CRM directories...'
     ]);
+
+    try {
+      await registerFormSubmission('AI Readiness Assessment', {
+        'Full Name': fullName,
+        'Corporate Email': email,
+        'Mobile Contact Number': phone,
+        'Country': country,
+        'Biggest Challenge': biggestChallenge,
+        'Maturity Score': overallScore,
+        'Maturity Level': maturityLevelInfo.level
+      });
+    } catch (err) {
+      console.error('Failed to register assessment submission:', err);
+    }
 
     setTimeout(() => {
       setSyncLogs(prev => [

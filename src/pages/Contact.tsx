@@ -12,6 +12,7 @@ import {
   Send
 } from 'lucide-react';
 import { RoutePath } from '../types';
+import { registerFormSubmission } from '../utils/googleSheets';
 
 interface ContactProps {
   setPath: (path: RoutePath) => void;
@@ -50,7 +51,7 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!handleValidation()) return;
 
@@ -60,6 +61,19 @@ export default function Contact({ setPath, darkMode }: ContactProps) {
       '🔍 [Validator Node] Sanitizing inputs and checking schema...',
       '📡 [n8n Server] Pushing payload to custom webhooks: ' + JSON.stringify({ name: formData.name, email: formData.email, phone: formData.phone })
     ]);
+
+    try {
+      await registerFormSubmission('Contact Page', {
+        'Full Name': formData.name,
+        'Corporate Email': formData.email,
+        'Mobile Contact Number': formData.phone,
+        'Industry': formData.industry,
+        'Requirement': formData.requirement,
+        'Message': formData.message
+      });
+    } catch (err) {
+      console.error('Failed to register form submission:', err);
+    }
 
     setTimeout(() => {
       setWebhookLogs(prev => [

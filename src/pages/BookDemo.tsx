@@ -44,6 +44,7 @@ import {
   Laptop
 } from 'lucide-react';
 import { RoutePath } from '../types';
+import { registerFormSubmission } from '../utils/googleSheets';
 
 interface BookDemoProps {
   setPath: (path: RoutePath) => void;
@@ -361,8 +362,8 @@ export default function BookDemo({ setPath, darkMode }: BookDemoProps) {
   };
 
   // Final submit simulation
-  const handleFinalSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleFinalSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     setWizardErrors('');
     
     if (!captchaChecked) {
@@ -371,6 +372,30 @@ export default function BookDemo({ setPath, darkMode }: BookDemoProps) {
     }
 
     setSubmitting(true);
+
+    try {
+      await registerFormSubmission('Demo Booking Wizard', {
+        'Full Name': formData.fullName,
+        'Company Name': formData.companyName,
+        'Website': formData.website,
+        'Corporate Email': formData.email,
+        'Mobile Contact Number': formData.phone,
+        'Country': formData.country,
+        'Monthly Revenue': formData.monthlyRevenue,
+        'Industry': formData.industry,
+        'Challenges': formData.challenges.join(', '),
+        'Goals': formData.goals.join(', '),
+        'Current Tools': formData.currentTools.join(', '),
+        'Investment Range': formData.budget,
+        'Meeting Type': formData.selectedMeetingType,
+        'Scheduled Date': formData.selectedDate,
+        'Scheduled TimeSlot': formData.selectedTimeSlot,
+        'Strategic Message': formData.briefMessage
+      });
+    } catch (err) {
+      console.error('Failed to register demo booking submission:', err);
+    }
+
     // Simulate API calls to GoHighLevel API, n8n webhook, and Resend
     setTimeout(() => {
       setSubmitting(false);

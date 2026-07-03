@@ -19,13 +19,17 @@ import {
   AlertTriangle,
   LogIn,
   LogOut,
-  Sparkles
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import { 
   getGoogleSheetsConfig, 
   saveGoogleSheetsConfig, 
   getFormSubmissions, 
   submitToGoogleSheetsWebhook, 
+  submitToSheetDB,
+  submitToFirebaseFirestore,
+  submitToAirtable,
   deleteSubmission, 
   clearAllSubmissions, 
   convertToCSV, 
@@ -39,16 +43,19 @@ import {
   initAuth,
   googleSignIn,
   logout,
-  getAccessToken
+  getAccessToken,
+  db
 } from '../utils/googleAuth';
 import { User } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 export default function GoogleSheetsTab() {
   const [config, setConfig] = useState<GoogleSheetsConfig>({
     spreadsheetId: '',
     sheetName: '',
     webhookUrl: '',
-    autoSync: true
+    autoSync: true,
+    manualToken: ''
   });
   const [submissions, setSubmissions] = useState<GoogleSheetSubmission[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +64,9 @@ export default function GoogleSheetsTab() {
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [selectedSubmission, setSelectedSubmission] = useState<GoogleSheetSubmission | null>(null);
 
+  // Sync Connection Strategy: 'webhook' | 'oauth' | 'sheetdb' | 'manual-token' | 'firebase' | 'airtable'
+  const [syncMethod, setSyncMethod] = useState<'oauth' | 'webhook' | 'sheetdb' | 'manual-token' | 'firebase' | 'airtable'>('sheetdb');
+
   // Google OAuth States
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -64,21 +74,54 @@ export default function GoogleSheetsTab() {
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [spreadsheetTitle, setSpreadsheetTitle] = useState<string | null>(null);
   const [isFetchingTitle, setIsFetchingTitle] = useState(false);
+  const [loginError, setLoginError] = useState<any>(null);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   // Load configuration and submissions on mount, and initialize Auth
   useEffect(() => {
-    setConfig(getGoogleSheetsConfig());
+    const savedConfig = getGoogleSheetsConfig();
+    setConfig(savedConfig);
     setSubmissions(getFormSubmissions());
+
+    // Auto-detect best active sync method based on saved configuration
+    if (savedConfig.syncMethod) {
+      setSyncMethod(savedConfig.syncMethod);
+      if (savedConfig.syncMethod === 'manual-token' && savedConfig.manualToken) {
+        setToken(savedConfig.manualToken);
+      }
+    } else if (savedConfig.sheetdbUrl) {
+      setSyncMethod('sheetdb');
+    } else if (savedConfig.manualToken) {
+      setSyncMethod('manual-token');
+      setToken(savedConfig.manualToken);
+    } else if (savedConfig.webhookUrl) {
+      if (savedConfig.webhookUrl.includes('sheetdb.io') || savedConfig.webhookUrl.includes('sheetdb')) {
+        setSyncMethod('sheetdb');
+      } else {
+        setSyncMethod('webhook');
+      }
+    } else {
+      setSyncMethod('oauth');
+    }
 
     const unsubscribe = initAuth(
       async (firebaseUser, cachedToken) => {
         setUser(firebaseUser);
-        setToken(cachedToken);
+        if (cachedToken) {
+          setToken(cachedToken);
+        } else if (savedConfig.manualToken) {
+          setToken(savedConfig.manualToken);
+        }
       },
       () => {
         setUser(null);
-        setToken(null);
-        setSpreadsheetTitle(null);
+        if (savedConfig.manualToken) {
+          setToken(savedConfig.manualToken);
+        } else {
+          setToken(null);
+          setSpreadsheetTitle(null);
+        }
       }
     );
 
@@ -86,6 +129,8 @@ export default function GoogleSheetsTab() {
     getAccessToken().then(cachedToken => {
       if (cachedToken) {
         setToken(cachedToken);
+      } else if (savedConfig.manualToken) {
+        setToken(savedConfig.manualToken);
       }
     });
 
@@ -96,8 +141,10 @@ export default function GoogleSheetsTab() {
 
   // Fetch the actual Google Spreadsheet Title from Google Sheets API when token is active
   useEffect(() => {
-    if (!token || !config.spreadsheetId) {
+    const activeToken = syncMethod === 'manual-token' ? config.manualToken : token;
+    if (!activeToken || !config.spreadsheetId) {
       setSpreadsheetTitle(null);
+      setTokenError(null);
       return;
     }
 
@@ -107,42 +154,61 @@ export default function GoogleSheetsTab() {
         const sheetId = extractSpreadsheetId(config.spreadsheetId);
         if (!sheetId) {
           setSpreadsheetTitle(null);
+          setTokenError(null);
           return;
         }
         const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${activeToken}` }
         });
         if (res.ok) {
           const data = await res.json();
           if (data?.properties?.title) {
             setSpreadsheetTitle(data.properties.title);
+            setTokenError(null);
           } else {
             setSpreadsheetTitle(null);
           }
         } else {
           setSpreadsheetTitle(null);
+          if (res.status === 401) {
+            setTokenError("session_expired");
+          } else if (res.status === 403) {
+            setTokenError("forbidden");
+          } else if (res.status === 404) {
+            setTokenError("not_found");
+          } else {
+            setTokenError("invalid");
+          }
         }
       } catch (err) {
         console.error('Error fetching spreadsheet title:', err);
         setSpreadsheetTitle(null);
+        setTokenError("invalid");
       } finally {
         setIsFetchingTitle(false);
       }
     };
 
     fetchSheetTitle();
-  }, [token, config.spreadsheetId]);
+  }, [token, config.spreadsheetId, config.manualToken, syncMethod]);
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
+    setLoginError(null);
     try {
       const result = await googleSignIn();
       if (result) {
         setUser(result.user);
         setToken(result.accessToken);
+        setLoginError(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google Sign-In failed:', err);
+      setLoginError({
+        code: err?.code || 'unknown',
+        message: err?.message || String(err)
+      });
+      setShowTroubleshoot(true);
     } finally {
       setIsLoggingIn(false);
     }
@@ -158,9 +224,15 @@ export default function GoogleSheetsTab() {
     }
   };
 
+  const handleSetSyncMethod = (method: 'oauth' | 'webhook' | 'sheetdb' | 'manual-token' | 'firebase' | 'airtable') => {
+    setSyncMethod(method);
+    setConfig(prev => ({ ...prev, syncMethod: method }));
+  };
+
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
-    saveGoogleSheetsConfig(config);
+    const configToSave = { ...config, syncMethod };
+    saveGoogleSheetsConfig(configToSave);
     setConfig(getGoogleSheetsConfig()); // Refresh local state to show the cleanly extracted spreadsheetId!
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -190,20 +262,47 @@ export default function GoogleSheetsTab() {
     let result: 'success' | 'failed' = 'failed';
     setSyncingId(submission.id);
 
-    if (token) {
+    const activeToken = syncMethod === 'manual-token' ? config.manualToken : token;
+
+    if (syncMethod === 'firebase') {
+      result = await submitToFirebaseFirestore(config, submission);
+    } else if (syncMethod === 'airtable') {
+      if (!config.airtableApiKey || !config.airtableBaseId || !config.airtableTableName) {
+        alert('Please configure your Airtable API settings first!');
+        setSyncingId(null);
+        return;
+      }
+      result = await submitToAirtable(config, submission);
+    } else if (syncMethod === 'sheetdb') {
+      if (!config.sheetdbUrl && !config.webhookUrl) {
+        alert('Please configure your SheetDB API URL in the configuration form first!');
+        setSyncingId(null);
+        return;
+      }
+      result = await submitToSheetDB(config, submission);
+    } else if (syncMethod === 'webhook') {
+      if (!config.webhookUrl) {
+        alert('Please configure a valid Google Apps Script Webhook URL first!');
+        setSyncingId(null);
+        return;
+      }
+      result = await submitToGoogleSheetsWebhook(config, submission);
+    } else {
+      if (!activeToken) {
+        alert(
+          syncMethod === 'manual-token'
+            ? 'Please enter your Google Sheets Manual Access Token in the configuration form!'
+            : 'Please connect your Google Account or select an alternative sync method!'
+        );
+        setSyncingId(null);
+        return;
+      }
       if (!config.spreadsheetId) {
         alert('Please configure your Target Spreadsheet ID first!');
         setSyncingId(null);
         return;
       }
-      result = await submitToGoogleSheetsDirectly(config, submission, token);
-    } else {
-      if (!config.webhookUrl) {
-        alert('Please connect your Google Account or configure a valid Google Apps Script Webhook URL first!');
-        setSyncingId(null);
-        return;
-      }
-      result = await submitToGoogleSheetsWebhook(config, submission);
+      result = await submitToGoogleSheetsDirectly(config, submission, activeToken);
     }
     
     // Update local state to reflect new sync status
@@ -219,11 +318,29 @@ export default function GoogleSheetsTab() {
   };
 
   const handleBulkSync = async () => {
-    if (!token && !config.webhookUrl) {
-      alert('Please connect your Google Account or configure a Google Apps Script Webhook URL first!');
+    const activeToken = syncMethod === 'manual-token' ? config.manualToken : token;
+
+    if (syncMethod === 'firebase') {
+      // Firestore needs no credentials check as it uses the active Firebase project context!
+    } else if (syncMethod === 'airtable') {
+      if (!config.airtableApiKey || !config.airtableBaseId || !config.airtableTableName) {
+        alert('Please configure your Airtable API credentials in the parameters form first!');
+        return;
+      }
+    } else if (syncMethod === 'sheetdb' && !config.sheetdbUrl && !config.webhookUrl) {
+      alert('Please configure your SheetDB API URL in the configuration form first!');
       return;
-    }
-    if (token && !config.spreadsheetId) {
+    } else if (syncMethod === 'webhook' && !config.webhookUrl) {
+      alert('Please configure a Google Apps Script Webhook URL first!');
+      return;
+    } else if (syncMethod !== 'webhook' && syncMethod !== 'sheetdb' && syncMethod !== 'firebase' && syncMethod !== 'airtable' && !activeToken) {
+      alert(
+        syncMethod === 'manual-token'
+          ? 'Please enter your Google Sheets Manual Access Token in the configuration form first!'
+          : 'Please connect your Google Account first!'
+      );
+      return;
+    } else if (syncMethod !== 'webhook' && syncMethod !== 'sheetdb' && syncMethod !== 'firebase' && syncMethod !== 'airtable' && !config.spreadsheetId) {
       alert('Please enter a Target Spreadsheet ID in the parameters card first!');
       return;
     }
@@ -233,8 +350,26 @@ export default function GoogleSheetsTab() {
       return;
     }
 
-    const modeText = token ? 'directly via Google Sheets API' : 'via Google Apps Script Webhook';
-    const destText = token ? `Google Sheet: "${config.sheetName || 'FormLeads'}"` : 'your configured Webhook';
+    const modeText = syncMethod === 'firebase'
+      ? 'directly to your Firebase Firestore cloud database'
+      : syncMethod === 'airtable'
+        ? 'directly to your Airtable table'
+        : syncMethod === 'webhook' 
+          ? 'via Google Apps Script Webhook' 
+          : syncMethod === 'sheetdb'
+            ? 'directly via SheetDB API'
+            : syncMethod === 'manual-token'
+              ? 'directly via Sheets API using Manual Token'
+              : 'directly via Google Sheets API';
+    const destText = syncMethod === 'firebase'
+      ? `Firestore collection: "${config.firebaseCollection || 'leads'}"`
+      : syncMethod === 'airtable'
+        ? `Airtable Table: "${config.airtableTableName || 'Leads'}"`
+        : syncMethod === 'webhook' 
+          ? 'your configured Webhook' 
+          : syncMethod === 'sheetdb'
+            ? 'your configured SheetDB Google Sheet'
+            : `Google Sheet: "${config.sheetName || 'FormLeads'}"`;
 
     if (window.confirm(`Do you want to bulk-write ${unsynced.length} unsynced form submissions ${modeText} into ${destText}?`)) {
       setIsBulkSyncing(true);
@@ -247,10 +382,16 @@ export default function GoogleSheetsTab() {
         setSyncingId(sub.id);
         let result: 'success' | 'failed' = 'failed';
         
-        if (token) {
-          result = await submitToGoogleSheetsDirectly(config, sub, token);
-        } else if (config.webhookUrl) {
+        if (syncMethod === 'firebase') {
+          result = await submitToFirebaseFirestore(config, sub);
+        } else if (syncMethod === 'airtable') {
+          result = await submitToAirtable(config, sub);
+        } else if (syncMethod === 'sheetdb') {
+          result = await submitToSheetDB(config, sub);
+        } else if (syncMethod === 'webhook') {
           result = await submitToGoogleSheetsWebhook(config, sub);
+        } else if (activeToken) {
+          result = await submitToGoogleSheetsDirectly(config, sub, activeToken);
         }
 
         if (result === 'success') {
@@ -302,6 +443,14 @@ export default function GoogleSheetsTab() {
   return (
     <div className="space-y-6 text-left font-sans">
       
+      {/* ALTERNATIVE CONNECTION NOTIFICATION */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center gap-3.5 shadow-lg">
+        <AlertTriangle className="h-5.5 w-5.5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+        <div className="text-xs text-gray-300 leading-relaxed">
+          <strong className="text-amber-400 font-bold">Can't log in to Google? (auth/unauthorized-domain error)</strong> — When testing on <code className="text-white font-mono bg-black/40 px-1 py-0.5 rounded">localhost</code> or in the preview, browser restrictions block Google's OAuth popup. Bypassing is easy: use the <strong className="text-white">Google Apps Script Webhook</strong> (fully free, zero logins) or <strong className="text-white">Manual Token</strong> method! Setup guide is on the right side card.
+        </div>
+      </div>
+
       {/* Overview stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 rounded-2xl border border-white/10 bg-[#0B0721]/30 backdrop-blur-md flex items-center justify-between">
@@ -373,6 +522,16 @@ export default function GoogleSheetsTab() {
                 ? `Successfully connected as ${user.displayName} (${user.email}). All incoming forms write directly to Google Sheets using the Sheets REST API.`
                 : 'Connect your Google account via secure Google OAuth. Once linked, all form submissions will append directly to your target Spreadsheet in real time, bypassing webhooks!'}
             </p>
+            {!user && (
+              <button
+                type="button"
+                onClick={() => setShowTroubleshoot(!showTroubleshoot)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 font-mono flex items-center gap-1 transition-colors mt-1 underline cursor-pointer"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                {showTroubleshoot ? 'Hide Localhost Auth Setup Guide' : 'Unable to sign in on localhost? See Setup Guide'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -406,6 +565,110 @@ export default function GoogleSheetsTab() {
         </div>
       </div>
 
+      {/* Localhost & OAuth Sign-In Troubleshooting Diagnostics Panel */}
+      {showTroubleshoot && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-6 rounded-3xl border border-amber-500/20 bg-amber-950/10 backdrop-blur-md space-y-4 text-left"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 text-amber-400">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <h4 className="font-bold text-sm">Localhost & Google OAuth Troubleshooting Console</h4>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setShowTroubleshoot(false)} 
+              className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {loginError && (
+            <div className="p-3 rounded-xl bg-black/40 border border-white/5 font-mono text-[11px] text-gray-300 space-y-1">
+              <div className="text-rose-400 font-bold">Captured Firebase Auth Error:</div>
+              <div><span className="text-gray-500">Error Code:</span> {loginError.code}</div>
+              <div className="break-all"><span className="text-gray-500">Message:</span> {loginError.message}</div>
+            </div>
+          )}
+
+          <div className="text-xs text-gray-300 space-y-3 font-sans">
+            <p>
+              When testing Google Authentication on a local machine (<code className="px-1.5 py-0.5 rounded bg-white/5 font-mono text-amber-300">localhost</code>), several browser security features and Firebase configurations must be set up properly:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {/* Step 1: Authorized Domains */}
+              <div className="p-4 rounded-2xl bg-black/20 border border-white/5 space-y-3 col-span-1 md:col-span-2">
+                <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">Step 1: Add Authorized Domains</span>
+                <p className="text-[11px] leading-relaxed text-gray-300">
+                  By default, Firebase restricts Google sign-in popups to specific domains for security. When testing on localhost or a local IP (like <code className="text-white font-mono">{window.location.hostname}</code>), you must register this host. Here are two ways to do this:
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Method A */}
+                  <div className="p-3 rounded-xl bg-white/5 space-y-1.5 border border-white/5">
+                    <span className="text-[10px] font-bold text-emerald-400 font-mono uppercase">Method A: Via Firebase Console</span>
+                    <ol className="list-decimal pl-4 text-[10px] text-gray-400 space-y-1">
+                      <li>Go to the <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`} target="_blank" rel="noopener noreferrer" className="text-[#00C2FF] hover:underline font-bold inline-flex items-center gap-0.5">Firebase Auth Settings <ExternalLink className="h-2.5 w-2.5" /></a></li>
+                      <li>At the top, click on the <strong className="text-white">Settings</strong> tab (next to <em>Users</em> and <em>Sign-in method</em>).</li>
+                      <li>In the left-hand sub-menu of the Settings tab, click <strong className="text-white">Authorized domains</strong>.</li>
+                      <li>Click the <strong className="text-white font-mono bg-emerald-500/20 text-emerald-300 px-1 rounded">Add domain</strong> button on the right, type your host/IP, and click Add.</li>
+                    </ol>
+                  </div>
+
+                  {/* Method B */}
+                  <div className="p-3 rounded-xl bg-white/5 space-y-1.5 border border-white/5">
+                    <span className="text-[10px] font-bold text-amber-400 font-mono uppercase">Method B: Via Google Cloud Console (Alternative)</span>
+                    <ol className="list-decimal pl-4 text-[10px] text-gray-400 space-y-1">
+                      <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-[#00C2FF] hover:underline font-bold inline-flex items-center gap-0.5">GCP Credentials page <ExternalLink className="h-2.5 w-2.5" /></a> (select project <code className="text-emerald-400">{firebaseConfig.projectId}</code>).</li>
+                      <li>Under "OAuth 2.0 Client IDs", click your <strong className="text-white">Web Client</strong>.</li>
+                      <li>Scroll to <strong className="text-white">Authorized JavaScript origins</strong> and add: <code className="text-white block font-mono text-[9px] bg-black/40 p-1 rounded mt-0.5">http://{window.location.hostname === 'localhost' ? 'localhost:3000' : `${window.location.hostname}:3000`}</code></li>
+                      <li>Scroll to <strong className="text-white">Authorized redirect URIs</strong> and add: <code className="text-white block font-mono text-[9px] bg-black/40 p-1 rounded mt-0.5">https://{firebaseConfig.projectId}.firebaseapp.com/__/auth/handler</code></li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/10 flex flex-col gap-1">
+                  <div className="text-[10px] uppercase font-mono font-bold text-amber-400">Values to register in your Console:</div>
+                  <div className="flex flex-wrap gap-2 mt-1 font-mono text-[10.5px]">
+                    <span className="text-gray-500 text-[9px] uppercase self-center">Current Domain:</span>
+                    <code className="px-1.5 py-0.5 rounded bg-rose-950/40 border border-rose-500/20 text-rose-300 font-bold select-all" title="Click to select and copy">
+                      {window.location.hostname}
+                    </code>
+                    <span className="text-gray-500 text-[9px] uppercase self-center">Standard Fallbacks:</span>
+                    <code className="px-1.5 py-0.5 rounded bg-black/40 text-gray-400 select-all">localhost</code>
+                    <code className="px-1.5 py-0.5 rounded bg-black/40 text-gray-400 select-all">127.0.0.1</code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2: Third-Party Cookies & Brave Shields */}
+              <div className="p-3.5 rounded-2xl bg-black/20 border border-white/5 space-y-2">
+                <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">Step 2: Browser Blockers & Cookies</span>
+                <p className="text-[11px] leading-relaxed">
+                  If you are using **Brave**, **Safari**, or Chrome with strict privacy settings, the Google login popups are often blocked, or Firebase is blocked from writing connection state cookies.
+                </p>
+                <ul className="list-disc pl-4 text-[10px] text-gray-400 space-y-1">
+                  <li>Disable **Brave Shields** or ad-blockers for <code className="text-white font-mono">localhost</code>.</li>
+                  <li>Enable third-party cookies or cross-site tracking in your browser's settings page.</li>
+                  <li>Verify that your browser address bar is not showing a "Pop-up Blocked" icon.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="pt-2 text-[11px] text-gray-400 flex items-center gap-2">
+              <Info className="h-4 w-4 shrink-0 text-[#00C2FF]" />
+              <span>
+                <strong>Offline Webhook Fallback:</strong> You can also use the <strong>Google Apps Script Webhook</strong> method on the right side card to sync forms entirely local/offline without Google Sign-In!
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Form Submissions Table - 8 cols */}
         <div className="lg:col-span-8 space-y-4">
@@ -420,7 +683,7 @@ export default function GoogleSheetsTab() {
               </div>
 
               <div className="flex gap-2">
-                {(token || config.webhookUrl) && (
+                {(token || config.webhookUrl || config.sheetdbUrl || config.manualToken) && (
                   <button
                     onClick={handleBulkSync}
                     disabled={isBulkSyncing || submissions.length === 0}
@@ -531,12 +794,12 @@ export default function GoogleSheetsTab() {
                           </td>
                           <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-1.5">
-                              {(config.webhookUrl || token) && (
+                              {(config.webhookUrl || config.sheetdbUrl || config.manualToken || token) && (
                                 <button
                                   onClick={() => handleTriggerSync(sub)}
                                   disabled={syncingId === sub.id}
                                   className="p-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all"
-                                  title={token ? "Push to Google Sheets directly" : "Repush to Google Sheet Webhook"}
+                                  title={syncMethod === 'sheetdb' ? "Push to SheetDB" : token ? "Push to Google Sheets directly" : "Repush to Webhook"}
                                 >
                                   {syncingId === sub.id ? (
                                     <RefreshCw className="h-3 w-3 animate-spin" />
@@ -574,56 +837,351 @@ export default function GoogleSheetsTab() {
             </h3>
             
             <form onSubmit={handleSaveConfig} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Target Spreadsheet ID</label>
-                <input
-                  type="text"
-                  value={config.spreadsheetId}
-                  onChange={(e) => setConfig({ ...config, spreadsheetId: e.target.value })}
-                  placeholder="1BxiMVs...U"
-                  className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
-                  required
-                />
-                {isFetchingTitle ? (
-                  <span className="text-[9px] text-gray-500 mt-1 block animate-pulse">Loading spreadsheet properties...</span>
-                ) : spreadsheetTitle ? (
-                  <span className="text-[10px] text-emerald-400 font-medium mt-1 block">Live Spreadsheet: <strong className="font-bold">"{spreadsheetTitle}"</strong></span>
-                ) : null}
-                {config.spreadsheetId && (
-                  <a
-                    href={`https://docs.google.com/spreadsheets/d/${extractSpreadsheetId(config.spreadsheetId)}/edit`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-[#00C2FF] hover:underline mt-1.5 flex items-center gap-1 font-mono"
+              {/* Connection Strategy Tabs */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono text-gray-400 uppercase block">Sync Connection Method</label>
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/40 p-1 border border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('firebase')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'firebase' 
+                        ? 'bg-emerald-500 text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
                   >
-                    <span>↗ Open sheet in Google Sheets</span>
-                  </a>
-                )}
+                    🔥 Firebase DB
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('airtable')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'airtable' 
+                        ? 'bg-[#00C2FF] text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    ⚡ Airtable CRM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('sheetdb')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'sheetdb' 
+                        ? 'bg-[#00C2FF] text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    SheetDB API
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('webhook')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'webhook' 
+                        ? 'bg-[#00C2FF] text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    Apps Script
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('oauth')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'oauth' 
+                        ? 'bg-[#00C2FF] text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    OAuth Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetSyncMethod('manual-token')}
+                    className={`py-1.5 px-2 rounded-lg text-center text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      syncMethod === 'manual-token' 
+                        ? 'bg-[#00C2FF] text-black shadow font-black' 
+                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    Manual Token
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Target Worksheet Name</label>
-                <input
-                  type="text"
-                  value={config.sheetName}
-                  onChange={(e) => setConfig({ ...config, sheetName: e.target.value })}
-                  placeholder="FormLeads"
-                  className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
-                  required
-                />
-              </div>
+              {syncMethod !== 'firebase' && syncMethod !== 'airtable' && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">
+                      Target Spreadsheet ID {syncMethod === 'sheetdb' && <span className="text-[9px] text-gray-500 lowercase">(optional for SheetDB)</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={config.spreadsheetId}
+                      onChange={(e) => setConfig({ ...config, spreadsheetId: e.target.value })}
+                      placeholder="1BxiMVs...U"
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
+                      required={syncMethod !== 'sheetdb'}
+                    />
+                    {isFetchingTitle ? (
+                      <span className="text-[9px] text-gray-500 mt-1 block animate-pulse">Loading spreadsheet properties...</span>
+                    ) : spreadsheetTitle ? (
+                      <span className="text-[10px] text-emerald-400 font-medium mt-1 block">Live Spreadsheet: <strong className="font-bold font-mono text-xs">"{spreadsheetTitle}"</strong></span>
+                    ) : null}
+                    {tokenError === "session_expired" && (syncMethod === 'oauth' || syncMethod === 'manual-token') && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] leading-normal font-sans">
+                        <strong>⚠️ Google Session Expired:</strong> Your authorization has expired (Google access tokens last 1 hour). Please click <strong>"OAuth Login"</strong> above to refresh access and ensure form data stores.
+                      </div>
+                    )}
+                    {tokenError === "forbidden" && (syncMethod === 'oauth' || syncMethod === 'manual-token') && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] leading-normal font-sans">
+                        <strong>⚠️ Permission Denied:</strong> This Google account doesn't have read/write access to this Spreadsheet. Check if you shared it or have correct permissions.
+                      </div>
+                    )}
+                    {tokenError === "not_found" && (syncMethod === 'oauth' || syncMethod === 'manual-token') && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] leading-normal font-sans">
+                        <strong>⚠️ Spreadsheet Not Found:</strong> The Spreadsheet ID could not be found. Double check your sheet ID or sheet URL.
+                      </div>
+                    )}
+                    {tokenError === "invalid" && (syncMethod === 'oauth' || syncMethod === 'manual-token') && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] leading-normal font-sans">
+                        <strong>⚠️ Connection Error:</strong> Unable to retrieve spreadsheet title. Please verify your credentials or try clicking <strong>"OAuth Login"</strong>.
+                      </div>
+                    )}
+                    {config.spreadsheetId && (
+                      <a
+                        href={`https://docs.google.com/spreadsheets/d/${extractSpreadsheetId(config.spreadsheetId)}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-[#00C2FF] hover:underline mt-1.5 flex items-center gap-1 font-mono"
+                      >
+                        <span>↗ Open sheet in Google Sheets</span>
+                      </a>
+                    )}
+                  </div>
 
-              <div>
-                <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Apps Script Webhook URL</label>
-                <input
-                  type="url"
-                  value={config.webhookUrl}
-                  onChange={(e) => setConfig({ ...config, webhookUrl: e.target.value })}
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
-                />
-                <span className="text-[9px] text-gray-500 mt-1 block">Leave empty to run in simulated cache mode.</span>
-              </div>
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Target Worksheet Name</label>
+                    <input
+                      type="text"
+                      value={config.sheetName}
+                      onChange={(e) => setConfig({ ...config, sheetName: e.target.value })}
+                      placeholder="FormLeads"
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
+              {syncMethod === 'firebase' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Firestore Collection Name</label>
+                    <input
+                      type="text"
+                      value={config.firebaseCollection || 'leads'}
+                      onChange={(e) => setConfig({ ...config, firebaseCollection: e.target.value })}
+                      placeholder="leads"
+                      className="w-full p-2.5 bg-black/40 border border-[#00C2FF] rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                      required
+                    />
+                    <span className="text-[9px] text-gray-500 mt-1 block">
+                      Saved directly in your active Firebase database. Requires <strong>ZERO setup</strong> or external API keys!
+                    </span>
+                  </div>
+
+                  {!db ? (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-[10px] leading-relaxed text-gray-300 space-y-2 font-sans text-left">
+                      <div className="flex items-center gap-1.5 text-amber-400 font-mono uppercase font-bold text-[9px] tracking-wider">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" /> Firestore Database Not Enabled
+                      </div>
+                      <p className="text-[10.5px]">
+                        The Firestore database service is not yet enabled in this Firebase project (<code>{firebaseConfig.projectId}</code>).
+                      </p>
+                      <p className="text-[9.5px] text-gray-400">
+                        💡 To use this, please enable Firestore in your project console or choose one of our other zero-setup methods: <strong>⚡ Airtable CRM</strong>, <strong>SheetDB API</strong>, or <strong>Apps Script Webhook</strong>.
+                      </p>
+                      <a
+                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#00C2FF] hover:underline font-mono text-[9.5px] font-semibold mt-1 block flex items-center gap-0.5"
+                      >
+                        ↗ Open Firebase Console to enable Firestore
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/15 text-[10px] leading-relaxed text-gray-300 space-y-2 font-sans text-left">
+                      <div className="flex items-center gap-1.5 text-emerald-400 font-mono uppercase font-bold text-[9px] tracking-wider">
+                        <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-400" /> Zero-Config Cloud Storage Activated!
+                      </div>
+                      <p className="text-[10.5px]">
+                        Your form submissions will be stored securely in the cloud under collection: <code className="text-emerald-400">"{config.firebaseCollection || 'leads'}"</code>.
+                      </p>
+                      <p className="text-[9.5px] text-gray-400">
+                        💡 <em>This acts as a solid database backup. You can also view and query the logs below, or download them as a CSV format anytime!</em>
+                      </p>
+                      <a
+                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#00C2FF] hover:underline font-mono text-[9.5px] font-semibold mt-1 block flex items-center gap-0.5"
+                      >
+                        ↗ Open live Firestore database console
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {syncMethod === 'airtable' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Airtable Personal Access Token (API Key)</label>
+                    <input
+                      type="password"
+                      value={config.airtableApiKey || ''}
+                      onChange={(e) => setConfig({ ...config, airtableApiKey: e.target.value })}
+                      placeholder="pat..."
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Airtable Base ID</label>
+                    <input
+                      type="text"
+                      value={config.airtableBaseId || ''}
+                      onChange={(e) => setConfig({ ...config, airtableBaseId: e.target.value })}
+                      placeholder="app..."
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Airtable Table Name</label>
+                    <input
+                      type="text"
+                      value={config.airtableTableName || 'Leads'}
+                      onChange={(e) => setConfig({ ...config, airtableTableName: e.target.value })}
+                      placeholder="Leads"
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-[#00C2FF]/5 border border-[#00C2FF]/15 text-[10px] leading-relaxed text-gray-300 space-y-1 font-sans text-left">
+                    <div className="flex items-center gap-1.5 text-[#00C2FF] font-mono uppercase font-bold text-[9px] tracking-wider">
+                      <Info className="h-3.5 w-3.5 shrink-0 text-[#00C2FF]" /> Airtable Sync Guide:
+                    </div>
+                    <p className="text-[10px]">
+                      Make sure your Airtable Table has columns matching your payload names (e.g. <strong>ID</strong>, <strong>Timestamp</strong>, <strong>Form Source</strong>, etc.) as Airtable requires columns to exist.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {syncMethod === 'sheetdb' && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">SheetDB API URL</label>
+                    <input
+                      type="url"
+                      value={config.sheetdbUrl || ''}
+                      onChange={(e) => setConfig({ ...config, sheetdbUrl: e.target.value })}
+                      placeholder="https://sheetdb.io/api/v1/your_api_id"
+                      className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                      required
+                    />
+                    <span className="text-[9px] text-gray-500 mt-1 block">
+                      Zero login required! Paste the SheetDB API URL here. It will write straight to your sheet (defaults to worksheet: <strong>{config.sheetName || 'FormLeads'}</strong>).
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-[#00C2FF]/5 border border-[#00C2FF]/15 text-[10px] leading-relaxed text-gray-300 space-y-2 font-sans text-left">
+                    <div className="flex items-center gap-1.5 text-[#00C2FF] font-mono uppercase font-bold text-[9px] tracking-wider">
+                      <Info className="h-3.5 w-3.5 shrink-0" /> SheetDB Sync Requirements:
+                    </div>
+                    <p className="text-[10.5px]">
+                      SheetDB is <strong>case-sensitive</strong> and maps form values directly to existing headers. If your Google Sheet is completely blank, SheetDB will return success but <strong>store nothing</strong>.
+                    </p>
+                    <div className="space-y-1">
+                      <span className="font-semibold text-white block text-[9.5px]">Make sure Row 1 of your sheet contains these exact headers:</span>
+                      <div className="p-2 rounded bg-black/60 font-mono text-[9px] text-[#00C2FF] flex flex-wrap gap-x-1.5 gap-y-1 border border-white/5 select-all">
+                        <span>ID</span> • <span>Timestamp</span> • <span>Form Source</span> • <span>Full Name</span> • <span>Corporate Email</span> • <span>Mobile Contact Number</span> • <span>Organization</span> • <span>Message</span> • <span>Page Header</span> • <span>Page URL</span>
+                      </div>
+                    </div>
+                    <p className="text-[9.5px] text-gray-400">
+                      💡 <em>Our system dynamically matches any casing variations in your existing columns to ensure high-fidelity delivery.</em>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {syncMethod === 'webhook' && (
+                <div>
+                  <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Apps Script Webhook URL</label>
+                  <input
+                    type="url"
+                    value={config.webhookUrl}
+                    onChange={(e) => setConfig({ ...config, webhookUrl: e.target.value })}
+                    placeholder="https://script.google.com/macros/s/.../exec"
+                    className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                    required
+                  />
+                  <span className="text-[9px] text-gray-500 mt-1 block">
+                    Zero login required. Runs entirely on your own Google Script!
+                  </span>
+                </div>
+              )}
+
+              {syncMethod === 'manual-token' && (
+                <div>
+                  <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Google Sheets OAuth Access Token</label>
+                  <input
+                    type="text"
+                    value={config.manualToken || ''}
+                    onChange={(e) => setConfig({ ...config, manualToken: e.target.value })}
+                    placeholder="Paste Bearer Token (ya29.a0Ax...)"
+                    className="w-full p-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-[#00C2FF] focus:outline-none font-mono"
+                    required
+                  />
+                  <span className="text-[9px] text-gray-500 mt-1 block">
+                    Paste a temporary Sheets API token to bypass Google popups entirely.
+                  </span>
+                </div>
+              )}
+
+              {syncMethod === 'oauth' && (
+                <div className="py-1">
+                  <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1.5">Connection State</label>
+                  {user ? (
+                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
+                      <span>Logged in as <strong>{user.email}</strong></span>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-mono flex flex-col gap-2">
+                      <div className="flex items-center gap-1">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        <span>Google Account is not connected</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleLogin}
+                        disabled={isLoggingIn}
+                        className="w-full py-1.5 bg-white hover:bg-gray-100 text-black text-[10px] font-black font-mono rounded-lg cursor-pointer transition-colors"
+                      >
+                        {isLoggingIn ? 'Connecting...' : 'Connect Google Sheets'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[10px] font-mono text-gray-400 uppercase">Automatic Background Sync</span>
@@ -638,7 +1196,7 @@ export default function GoogleSheetsTab() {
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-[#00C2FF] text-black font-black text-xs font-mono flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
+                className="w-full py-2.5 rounded-xl bg-[#00C2FF] text-black font-black text-xs font-mono flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity cursor-pointer"
               >
                 <Check className="h-4 w-4" /> Save Configuration
               </button>

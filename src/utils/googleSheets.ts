@@ -1,5 +1,6 @@
 import { RoutePath } from '../types';
-import { getAccessToken } from './googleAuth';
+import { getAccessToken, db } from './googleAuth';
+import { collection, addDoc } from 'firebase/firestore';
 
 export interface GoogleSheetSubmission {
   id: string;
@@ -14,6 +15,13 @@ export interface GoogleSheetsConfig {
   sheetName: string;
   webhookUrl: string;
   autoSync: boolean;
+  manualToken?: string;
+  sheetdbUrl?: string;
+  firebaseCollection?: string;
+  airtableApiKey?: string;
+  airtableBaseId?: string;
+  airtableTableName?: string;
+  syncMethod?: 'oauth' | 'webhook' | 'sheetdb' | 'manual-token' | 'firebase' | 'airtable';
 }
 
 const STORAGE_KEY_CONFIG = 'natton_google_sheets_config';
@@ -23,7 +31,14 @@ const DEFAULT_CONFIG: GoogleSheetsConfig = {
   spreadsheetId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUYq-37ZKVN4GHy4X6U',
   sheetName: 'FormLeads',
   webhookUrl: '',
-  autoSync: true
+  autoSync: true,
+  manualToken: '',
+  sheetdbUrl: '',
+  firebaseCollection: 'leads',
+  airtableApiKey: '',
+  airtableBaseId: '',
+  airtableTableName: 'Leads',
+  syncMethod: 'sheetdb'
 };
 
 const DEFAULT_SUBMISSIONS: GoogleSheetSubmission[] = [
@@ -166,9 +181,10 @@ export function getGoogleSheetsConfig(): GoogleSheetsConfig {
       return DEFAULT_CONFIG;
     }
     const parsed = JSON.parse(config);
+    const merged = { ...DEFAULT_CONFIG, ...parsed };
     // Ensure spreadsheet ID is cleaned up
-    parsed.spreadsheetId = extractSpreadsheetId(parsed.spreadsheetId);
-    return parsed;
+    merged.spreadsheetId = extractSpreadsheetId(merged.spreadsheetId);
+    return merged;
   } catch (e) {
     return DEFAULT_CONFIG;
   }
@@ -228,6 +244,161 @@ export async function submitToGoogleSheetsWebhook(config: GoogleSheetsConfig, su
   }
 }
 
+// Trigger SheetDB POST request
+export async function submitToSheetDB(config: GoogleSheetsConfig, submission: GoogleSheetSubmission): Promise<'success' | 'failed'> {
+  const rawUrl = config.sheetdbUrl || config.webhookUrl;
+  if (!rawUrl) return 'failed';
+
+  try {
+    let targetUrl = rawUrl.trim();
+    
+    // Auto-append sheet name parameter if sheet name is configured and not already specified in the URL query string
+    const sheetName = config.sheetName || 'FormLeads';
+    if (sheetName && !targetUrl.includes('sheet=')) {
+      const separator = targetUrl.includes('?') ? '&' : '?';
+      targetUrl = `${targetUrl}${separator}sheet=${encodeURIComponent(sheetName)}`;
+    }
+
+    // Fetch existing column keys from SheetDB to perform smart case-insensitive header mapping
+    let sheetdbKeys: string[] = [];
+    try {
+      const baseApiUrl = targetUrl.split('?')[0];
+      const keysRes = await fetch(`${baseApiUrl}/keys`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (keysRes.ok) {
+        sheetdbKeys = await keysRes.json() as string[];
+      }
+    } catch (e) {
+      console.warn('Failed to fetch keys from SheetDB, falling back to standard mapping:', e);
+    }
+
+    // SheetDB expects an object array in this format:
+    // { "data": [ { "ID": "lead-...", "Timestamp": "...", "Form Source": "...", "Full Name": "...", ... } ] }
+    const row: Record<string, any> = {};
+
+    if (sheetdbKeys && sheetdbKeys.length > 0) {
+      const keysLower = sheetdbKeys.map(k => String(k).trim().toLowerCase());
+      
+      const setMatchedVal = (targetName: string, value: any) => {
+        const lowerName = targetName.toLowerCase();
+        const idx = keysLower.indexOf(lowerName);
+        if (idx !== -1) {
+          row[sheetdbKeys[idx]] = value;
+        } else {
+          row[targetName] = value;
+        }
+      };
+
+      setMatchedVal('ID', submission.id);
+      setMatchedVal('Timestamp', submission.timestamp);
+      
+      let fsIdx = keysLower.indexOf('form source');
+      if (fsIdx === -1) fsIdx = keysLower.indexOf('formname');
+      if (fsIdx !== -1) {
+        row[sheetdbKeys[fsIdx]] = submission.formName;
+      } else {
+        row['Form Source'] = submission.formName;
+      }
+
+      Object.entries(submission.payload).forEach(([key, val]) => {
+        const cleanKey = key.trim();
+        const lowerKey = cleanKey.toLowerCase();
+        const idx = keysLower.indexOf(lowerKey);
+        if (idx !== -1) {
+          row[sheetdbKeys[idx]] = typeof val === 'object' ? JSON.stringify(val) : val;
+        } else {
+          row[cleanKey] = typeof val === 'object' ? JSON.stringify(val) : val;
+        }
+      });
+    } else {
+      // Fallback exact mapping
+      row['ID'] = submission.id;
+      row['Timestamp'] = submission.timestamp;
+      row['Form Source'] = submission.formName;
+      Object.entries(submission.payload).forEach(([key, val]) => {
+        row[key] = typeof val === 'object' ? JSON.stringify(val) : val;
+      });
+    }
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ data: [row] })
+    });
+
+    if (response.ok) {
+      return 'success';
+    }
+    return 'failed';
+  } catch (error) {
+    console.error('Failed to submit to SheetDB:', error);
+    return 'failed';
+  }
+}
+
+// Submit lead directly to Firebase Firestore
+export async function submitToFirebaseFirestore(config: GoogleSheetsConfig, submission: GoogleSheetSubmission): Promise<'success' | 'failed'> {
+  try {
+    if (!db) {
+      console.error('Firebase Firestore database is not enabled or available in your Firebase console. Please ensure Firestore is created for this project.');
+      return 'failed';
+    }
+    const collName = config.firebaseCollection || 'leads';
+    const leadDoc = {
+      id: submission.id,
+      timestamp: submission.timestamp,
+      formName: submission.formName,
+      ...submission.payload
+    };
+    await addDoc(collection(db, collName), leadDoc);
+    return 'success';
+  } catch (error) {
+    console.error('Failed to submit to Firebase Firestore:', error);
+    return 'failed';
+  }
+}
+
+// Submit lead directly to Airtable
+export async function submitToAirtable(config: GoogleSheetsConfig, submission: GoogleSheetSubmission): Promise<'success' | 'failed'> {
+  if (!config.airtableApiKey || !config.airtableBaseId || !config.airtableTableName) {
+    return 'failed';
+  }
+  try {
+    const fields: Record<string, any> = {
+      'ID': submission.id,
+      'Timestamp': submission.timestamp,
+      'Form Source': submission.formName,
+    };
+    Object.entries(submission.payload).forEach(([key, val]) => {
+      fields[key] = typeof val === 'object' ? JSON.stringify(val) : val;
+    });
+
+    const url = `https://api.airtable.com/v0/${config.airtableBaseId}/${encodeURIComponent(config.airtableTableName)}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.airtableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ records: [{ fields }] })
+    });
+
+    if (response.ok) {
+      return 'success';
+    }
+    const errData = await response.json().catch(() => ({}));
+    console.error('Airtable API error response:', errData);
+    return 'failed';
+  } catch (error) {
+    console.error('Failed to submit to Airtable:', error);
+    return 'failed';
+  }
+}
+
 export function getColLetter(colIndex: number): string {
   let letter = '';
   let temp = colIndex;
@@ -244,13 +415,55 @@ export async function submitToGoogleSheetsDirectly(
   accessToken: string
 ): Promise<'success' | 'failed'> {
   const spreadsheetId = extractSpreadsheetId(config.spreadsheetId);
-  const sheetName = config.sheetName || 'FormLeads';
+  let sheetName = config.sheetName || 'FormLeads';
   if (!spreadsheetId) return 'failed';
 
   try {
     let headersRaw = ["ID", "Timestamp", "Form Source", "Full Name", "Corporate Email", "Mobile Contact Number", "Organization", "Message"];
     
-    // 1. Get the first row (headers) to see if sheet exists and what columns it has
+    // 1. Fetch spreadsheet metadata to check what sheets/tabs exist
+    let existingSheets: string[] = [];
+    try {
+      const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (metaRes.ok) {
+        const metaData = await metaRes.json();
+        existingSheets = metaData.sheets?.map((s: any) => s?.properties?.title).filter(Boolean) || [];
+      }
+    } catch (e) {
+      console.warn('Failed to fetch spreadsheet metadata:', e);
+    }
+
+    // 2. If our target sheet does not exist, try to create it!
+    if (existingSheets.length > 0 && !existingSheets.includes(sheetName)) {
+      try {
+        const createRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+          method: 'POST',
+          headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            requests: [{ addSheet: { properties: { title: sheetName } } }]
+          })
+        });
+        if (createRes.ok) {
+          existingSheets.push(sheetName);
+        } else {
+          // Fallback to first available sheet if creation fails (highly resilient!)
+          console.warn(`Could not create sheet "${sheetName}". Falling back to first sheet: "${existingSheets[0]}"`);
+          sheetName = existingSheets[0];
+        }
+      } catch (err) {
+        console.error("Error creating sheet, falling back to first sheet:", err);
+        sheetName = existingSheets[0];
+      }
+    } else if (existingSheets.length === 0) {
+      // If metadata failed but we have no existing sheets, fallback to standard sheets check
+    }
+
+    // 3. Get the first row (headers) to see if sheet exists and what columns it has
     const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!1:1`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -260,7 +473,7 @@ export async function submitToGoogleSheetsDirectly(
       if (data.values && data.values[0] && data.values[0].length > 0) {
         headersRaw = data.values[0];
       } else {
-        // Empty sheet, write headers
+        // Empty sheet, write default headers first
         await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1?valueInputOption=USER_ENTERED`, {
           method: 'PUT',
           headers: { 
@@ -270,20 +483,8 @@ export async function submitToGoogleSheetsDirectly(
           body: JSON.stringify({ values: [headersRaw] })
         });
       }
-    } else if (res.status === 400 || res.status === 404) {
-      // Sheet probably doesn't exist, create it
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-        method: 'POST',
-        headers: { 
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          requests: [{ addSheet: { properties: { title: sheetName } } }]
-        })
-      });
-      
-      // Write headers
+    } else {
+      // If reading A1:1 fails (e.g. range error, or sheet is empty), try to write headers
       await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1?valueInputOption=USER_ENTERED`, {
         method: 'PUT',
         headers: { 
@@ -292,11 +493,9 @@ export async function submitToGoogleSheetsDirectly(
         },
         body: JSON.stringify({ values: [headersRaw] })
       });
-    } else {
-      return 'failed';
     }
 
-    // 2. Identify missing headers and add them
+    // 4. Identify missing headers and add them dynamically as new columns
     const headersLower = headersRaw.map(h => String(h).trim().toLowerCase());
     const newHeadersToAppend: string[] = [];
 
@@ -311,19 +510,23 @@ export async function submitToGoogleSheetsDirectly(
     for (const key of newHeadersToAppend) {
       const nextColLetter = getColLetter(headersRaw.length);
       const cellAddress = `${nextColLetter}1`;
-      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!${cellAddress}?valueInputOption=USER_ENTERED`, {
-        method: 'PUT',
-        headers: { 
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [[key]] })
-      });
-      headersRaw.push(key);
-      headersLower.push(key.toLowerCase());
+      try {
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!${cellAddress}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ values: [[key]] })
+        });
+        headersRaw.push(key);
+        headersLower.push(key.toLowerCase());
+      } catch (err) {
+        console.error(`Failed to append header "${key}":`, err);
+      }
     }
 
-    // 3. Build the row to append
+    // 5. Build the row to append
     const rowData = new Array(headersRaw.length).fill("");
 
     const idIndex = headersLower.indexOf("id");
@@ -345,7 +548,7 @@ export async function submitToGoogleSheetsDirectly(
       }
     });
 
-    // 4. Append row
+    // 6. Append row
     const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:append?valueInputOption=USER_ENTERED`, {
       method: 'POST',
       headers: { 
@@ -373,7 +576,6 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
   // Create clean formatted payload
   const initialClean: Record<string, any> = {};
   Object.entries(rawPayload).forEach(([key, val]) => {
-    // Exclude react synthetic event elements, secrets or consent checkboxes if needed, or clean up key names
     const cleanKey = key.replace(/[:*]/g, '').trim();
     if (cleanKey && cleanKey !== 'consent' && cleanKey !== 'password' && typeof val !== 'function') {
       initialClean[cleanKey] = typeof val === 'boolean' ? (val ? 'Yes' : 'No') : val;
@@ -383,6 +585,21 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
   // Normalize keys to align precisely with user-defined Google Sheet column headers
   const cleanPayload = normalizePayloadKeys(initialClean);
 
+  // Automatically capture and inject page header/title and page URL path with every submission
+  const pageTitle = typeof document !== 'undefined' ? document.title : 'Natton Digital';
+  const pagePath = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const pageUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+  if (!cleanPayload['Form Source']) {
+    cleanPayload['Form Source'] = formName;
+  }
+  if (!cleanPayload['Page Header']) {
+    cleanPayload['Page Header'] = pageTitle.split('|')[0].trim();
+  }
+  if (!cleanPayload['Page URL']) {
+    cleanPayload['Page URL'] = pageUrl || pagePath;
+  }
+
   const newSubmission: GoogleSheetSubmission = {
     id: 'lead-' + Math.random().toString(36).substring(2, 9),
     timestamp: new Date().toISOString(),
@@ -391,13 +608,60 @@ export async function registerFormSubmission(formName: string, rawPayload: Recor
     syncStatus: 'simulated'
   };
 
-  const accessToken = await getAccessToken();
-  if (accessToken) {
-    const status = await submitToGoogleSheetsDirectly(config, newSubmission, accessToken);
-    newSubmission.syncStatus = status;
-  } else if (config.webhookUrl) {
-    const status = await submitToGoogleSheetsWebhook(config, newSubmission);
-    newSubmission.syncStatus = status;
+  const cachedToken = await getAccessToken();
+  const accessToken = cachedToken || config.manualToken;
+  
+  const isSheetDB = (config.sheetdbUrl && config.sheetdbUrl.trim().length > 0) || 
+                    (config.webhookUrl && (config.webhookUrl.includes('sheetdb.io') || config.webhookUrl.includes('sheetdb')));
+
+  // Smart dynamic active method resolution
+  let activeMethod = config.syncMethod || 'oauth';
+  if (activeMethod === 'firebase' || activeMethod === 'airtable') {
+    // Keep as is
+  } else if (activeMethod === 'sheetdb' && !isSheetDB) {
+    activeMethod = accessToken ? 'oauth' : config.webhookUrl ? 'webhook' : 'oauth';
+  } else if (activeMethod === 'webhook' && !config.webhookUrl) {
+    activeMethod = isSheetDB ? 'sheetdb' : accessToken ? 'oauth' : 'oauth';
+  } else if (activeMethod === 'oauth' && !cachedToken && config.manualToken) {
+    activeMethod = 'manual-token';
+  } else if (activeMethod === 'oauth' && !cachedToken && !config.manualToken) {
+    activeMethod = isSheetDB ? 'sheetdb' : config.webhookUrl ? 'webhook' : 'oauth';
+  } else if (activeMethod === 'manual-token' && !config.manualToken) {
+    activeMethod = cachedToken ? 'oauth' : isSheetDB ? 'sheetdb' : config.webhookUrl ? 'webhook' : 'oauth';
+  }
+
+  if (config.autoSync) {
+    if (activeMethod === 'firebase') {
+      const status = await submitToFirebaseFirestore(config, newSubmission);
+      newSubmission.syncStatus = status;
+    } else if (activeMethod === 'airtable') {
+      const status = await submitToAirtable(config, newSubmission);
+      newSubmission.syncStatus = status;
+    } else if (activeMethod === 'sheetdb') {
+      const status = await submitToSheetDB(config, newSubmission);
+      newSubmission.syncStatus = status;
+    } else if (activeMethod === 'webhook') {
+      const status = await submitToGoogleSheetsWebhook(config, newSubmission);
+      newSubmission.syncStatus = status;
+    } else if (activeMethod === 'oauth' && cachedToken) {
+      const status = await submitToGoogleSheetsDirectly(config, newSubmission, cachedToken);
+      newSubmission.syncStatus = status;
+    } else if (activeMethod === 'manual-token' && config.manualToken) {
+      const status = await submitToGoogleSheetsDirectly(config, newSubmission, config.manualToken);
+      newSubmission.syncStatus = status;
+    } else {
+      // Last-resort fallback based on whatever is available
+      if (isSheetDB) {
+        const status = await submitToSheetDB(config, newSubmission);
+        newSubmission.syncStatus = status;
+      } else if (accessToken) {
+        const status = await submitToGoogleSheetsDirectly(config, newSubmission, accessToken);
+        newSubmission.syncStatus = status;
+      } else if (config.webhookUrl) {
+        const status = await submitToGoogleSheetsWebhook(config, newSubmission);
+        newSubmission.syncStatus = status;
+      }
+    }
   }
 
   const updatedSubmissions = [newSubmission, ...submissions];

@@ -283,6 +283,96 @@ export default function App() {
                           form.getAttribute('action')?.includes('login');
       if (isLoginForm) return;
 
+      // Do NOT capture interactive utility forms (chats, searches, SEO analyzers, or message replies)
+      const formIdLower = (form.id || '').toLowerCase();
+      const formClassLower = (form.className || '').toLowerCase();
+      
+      const isInteractiveUtility = 
+        form.querySelector('input[type="search"]') !== null ||
+        formIdLower.includes('search') ||
+        formClassLower.includes('search') ||
+        formIdLower.includes('chat') ||
+        formClassLower.includes('chat') ||
+        formIdLower.includes('reply') ||
+        formClassLower.includes('reply') ||
+        formIdLower.includes('message') ||
+        formClassLower.includes('message') ||
+        formIdLower.includes('whatsapp') ||
+        formIdLower.includes('grader') ||
+        formIdLower.includes('seo') ||
+        formIdLower.includes('audit');
+
+      if (isInteractiveUtility) return;
+
+      // Check if any input is standard search or chatbot-like message input
+      let hasLeadFields = false;
+      let hasExcludedKeywords = false;
+
+      const allInputs = Array.from(form.querySelectorAll('input, select, textarea'));
+      for (const el of allInputs) {
+        const input = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        if (input.type === 'submit' || input.type === 'button') continue;
+
+        const placeholder = (('placeholder' in input ? (input as HTMLInputElement).placeholder : '') || '').toLowerCase();
+        const nameOrId = ((input.name || '') + ' ' + (input.id || '')).toLowerCase();
+
+        if (
+          placeholder.includes('search') ||
+          placeholder.includes('type a message') ||
+          placeholder.includes('type message') ||
+          placeholder.includes('type your message') ||
+          placeholder.includes('write a reply') ||
+          placeholder.includes('ask a question') ||
+          placeholder.includes('ask ai') ||
+          placeholder.includes('enter message') ||
+          placeholder.includes('send message') ||
+          placeholder.includes('whatsapp') ||
+          placeholder.includes('chat...') ||
+          nameOrId.includes('search') ||
+          nameOrId.includes('query') ||
+          nameOrId.includes('message_text') ||
+          nameOrId.includes('chatmsg')
+        ) {
+          hasExcludedKeywords = true;
+          break;
+        }
+
+        const typeLower = (input.type || '').toLowerCase();
+        if (
+          typeLower === 'email' ||
+          typeLower === 'tel' ||
+          nameOrId.includes('email') ||
+          nameOrId.includes('phone') ||
+          nameOrId.includes('tel') ||
+          nameOrId.includes('contact') ||
+          nameOrId.includes('mobile') ||
+          nameOrId.includes('name') ||
+          nameOrId.includes('company') ||
+          nameOrId.includes('business') ||
+          placeholder.includes('email') ||
+          placeholder.includes('phone') ||
+          placeholder.includes('mobile') ||
+          placeholder.includes('contact') ||
+          placeholder.includes('name') ||
+          placeholder.includes('company') ||
+          placeholder.includes('business')
+        ) {
+          hasLeadFields = true;
+        }
+      }
+
+      if (hasExcludedKeywords) return;
+
+      // If the form has absolutely zero lead fields and is just a single text/textarea input, ignore it
+      const visibleInputs = allInputs.filter(el => {
+        const input = el as HTMLInputElement;
+        return input.type !== 'submit' && input.type !== 'button' && input.type !== 'hidden';
+      });
+
+      if (visibleInputs.length === 1 && !hasLeadFields) {
+        return;
+      }
+
       // Determine the form name or source
       let formName = form.getAttribute('data-form-name') || '';
       if (!formName) {

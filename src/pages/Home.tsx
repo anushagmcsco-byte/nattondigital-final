@@ -21,6 +21,7 @@ import {
 import { RoutePath } from '../types';
 import InteractiveGlobe from '../components/InteractiveGlobe';
 import DashboardPreview from '../components/DashboardPreview';
+import { registerFormSubmission } from '../utils/googleSheets';
 
 interface HomeProps {
   setPath: (path: RoutePath) => void;
@@ -103,10 +104,25 @@ export default function Home({ setPath, darkMode }: HomeProps) {
     'GoHighLevel Gold Partner', 'n8n Certified Orchestrator', 'Google Ads Premier Partner', 'Meta Business Partner', 'Stripe Developer Partner', 'OpenAI Enterprise Provider', 'Twilio Authorized ISV'
   ];
 
-  const handleConsultSubmit = (e: React.FormEvent) => {
+  const handleConsultSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.businessName) return;
     setIsSubmitting(true);
+    
+    try {
+      await registerFormSubmission('Home Quick Consultation', {
+        'Full Name': formData.name,
+        'Company Name': formData.businessName,
+        'Corporate Email': formData.email,
+        'Mobile Contact Number': formData.phone,
+        'Industry': formData.industry,
+        'Monthly Revenue': formData.monthlyRevenue,
+        'Requirement': formData.requirement
+      });
+    } catch (err) {
+      console.error('Failed to register consultation submission:', err);
+    }
+
     // Simulate n8n webhook call with security check
     setTimeout(() => {
       setIsSubmitting(false);
