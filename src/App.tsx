@@ -83,6 +83,11 @@ const SEO_METADATA: Record<string, { title: string; description: string; image: 
     description: 'Deploy our proprietary platform for scaling organic traffic, indexing thousands of SEO pages, and automating ads budgets.',
     image: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=1200&q=80'
   },
+  'products/growthos': {
+    title: 'GrowthOS™ All-In-One Acquisition Suite | Natton Digital',
+    description: 'Deploy our proprietary platform for scaling organic traffic, indexing thousands of SEO pages, and automating ads budgets.',
+    image: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=1200&q=80'
+  },
   'products/ai-marketing-platform': {
     title: 'AI Marketing Studio & Campaign Scorer | Natton Digital',
     description: 'Instantly generate highly-converting copies, design visuals dynamically, and grade campaign relevance automatically.',
@@ -93,7 +98,17 @@ const SEO_METADATA: Record<string, { title: string; description: string; image: 
     description: 'Integrate legacy CRM pipelines, accounting records, customer databases, and logistics trackers under one system.',
     image: 'https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=1200&q=80'
   },
+  'products/businessos': {
+    title: 'BusinessOS™ Operational Automation | Natton Digital',
+    description: 'Integrate legacy CRM pipelines, accounting records, customer databases, and logistics trackers under one system.',
+    image: 'https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=1200&q=80'
+  },
   'products/agentic-os': {
+    title: 'AgenticOS™ Multi-Agent Orchestration | Natton Digital',
+    description: 'Build, govern, and monitor concurrent AI agents executing operations with custom-designed permission states.',
+    image: 'https://images.unsplash.com/photo-1531747118685-ca8fa6e08806?auto=format&fit=crop&w=1200&q=80'
+  },
+  'products/agenticos': {
     title: 'AgenticOS™ Multi-Agent Orchestration | Natton Digital',
     description: 'Build, govern, and monitor concurrent AI agents executing operations with custom-designed permission states.',
     image: 'https://images.unsplash.com/photo-1531747118685-ca8fa6e08806?auto=format&fit=crop&w=1200&q=80'
@@ -119,6 +134,11 @@ const SEO_METADATA: Record<string, { title: string; description: string; image: 
     image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=1200&q=80'
   },
   'industries/retail-ecommerce': {
+    title: 'Smart Cart Recovery & Retail AI Growth | Natton Digital',
+    description: 'Automate coupon distribution, retarget abandoned checkouts on WhatsApp, and triage customer refunds cleanly.',
+    image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80'
+  },
+  'industries/retail': {
     title: 'Smart Cart Recovery & Retail AI Growth | Natton Digital',
     description: 'Automate coupon distribution, retarget abandoned checkouts on WhatsApp, and triage customer refunds cleanly.',
     image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80'
@@ -224,6 +244,14 @@ export default function App() {
   const [path, setPath] = useState<RoutePath>('home');
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [selectedBlogPostId, setSelectedBlogPostId] = useState<string | null>(null);
+  const [activeBlogSEO, setActiveBlogSEO] = useState<{ title: string; description: string; image?: string } | null>(null);
+
+  // Clear active blog SEO when leaving the blog page
+  useEffect(() => {
+    if (path !== 'blog') {
+      setActiveBlogSEO(null);
+    }
+  }, [path]);
 
   // Sync dark mode class with document root
   useEffect(() => {
@@ -601,6 +629,7 @@ export default function App() {
           darkMode={darkMode} 
           selectedBlogPostId={selectedBlogPostId} 
           setSelectedBlogPostId={setSelectedBlogPostId} 
+          setActiveBlogSEO={setActiveBlogSEO}
         />
       );
     }
@@ -672,7 +701,13 @@ export default function App() {
     return <Home setPath={setPath} darkMode={darkMode} />;
   };
 
-  const currentSEO = SEO_METADATA[path] || SEO_METADATA['home'];
+  const currentSEO = path === 'blog' && activeBlogSEO
+    ? {
+        title: activeBlogSEO.title,
+        description: activeBlogSEO.description,
+        image: activeBlogSEO.image || SEO_METADATA['blog'].image
+      }
+    : (SEO_METADATA[path] || SEO_METADATA['home']);
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 font-sans ${

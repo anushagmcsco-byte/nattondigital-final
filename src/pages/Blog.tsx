@@ -45,9 +45,10 @@ interface BlogProps {
   darkMode: boolean;
   selectedBlogPostId?: string | null;
   setSelectedBlogPostId?: (id: string | null) => void;
+  setActiveBlogSEO?: (seo: { title: string; description: string; image?: string } | null) => void;
 }
 
-export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelectedBlogPostId }: BlogProps) {
+export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelectedBlogPostId, setActiveBlogSEO }: BlogProps) {
   // Navigation & Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -232,6 +233,21 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
   });
 
   const activePost = blogPostsList.find(p => p.id === activePostId);
+
+  // Sync active blog post with App level SEO
+  useEffect(() => {
+    if (setActiveBlogSEO) {
+      if (activePost) {
+        setActiveBlogSEO({
+          title: `${activePost.title} | Natton Digital Blog`,
+          description: activePost.excerpt,
+          image: activePost.featuredImage
+        });
+      } else {
+        setActiveBlogSEO(null);
+      }
+    }
+  }, [activePost, setActiveBlogSEO]);
 
   // Industry Specific Guides list
   const industryGuides = [
