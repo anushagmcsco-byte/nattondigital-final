@@ -29,7 +29,8 @@ export default function SEO({ title, description, image }: SEOProps) {
     updateMetaTag('meta[property="og:title"]', 'property', 'og:title', title);
     updateMetaTag('meta[property="og:description"]', 'property', 'og:description', description);
     if (image) {
-      updateMetaTag('meta[property="og:image"]', 'property', 'og:image', image);
+      const imageUrl = image.startsWith('http') ? image : `${window.location.origin}${image.startsWith('/') ? '' : '/'}${image}`;
+      updateMetaTag('meta[property="og:image"]', 'property', 'og:image', imageUrl);
     }
 
     // 4. Update Twitter Card tags
@@ -37,7 +38,8 @@ export default function SEO({ title, description, image }: SEOProps) {
     updateMetaTag('meta[name="twitter:title"]', 'name', 'twitter:title', title);
     updateMetaTag('meta[name="twitter:description"]', 'name', 'twitter:description', description);
     if (image) {
-      updateMetaTag('meta[name="twitter:image"]', 'name', 'twitter:image', image);
+      const imageUrl = image.startsWith('http') ? image : `${window.location.origin}${image.startsWith('/') ? '' : '/'}${image}`;
+      updateMetaTag('meta[name="twitter:image"]', 'name', 'twitter:image', imageUrl);
     }
   }, [title, description, image]);
 
