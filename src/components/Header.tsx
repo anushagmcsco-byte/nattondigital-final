@@ -358,6 +358,17 @@ export default function Header({ currentPath, setPath, darkMode, setDarkMode }: 
             </div>
 
             <button
+              onClick={() => setPath('blog')}
+              className={`text-sm font-medium transition-colors ${
+                currentPath === 'blog'
+                  ? 'text-primary font-semibold'
+                  : (darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900')
+              }`}
+            >
+              Blog
+            </button>
+
+            <button
               onClick={() => setPath('contact')}
               className={`text-sm font-medium transition-colors ${
                 currentPath === 'contact'
@@ -440,6 +451,17 @@ export default function Header({ currentPath, setPath, darkMode, setDarkMode }: 
           darkMode ? 'bg-[#110B33] border-white/[0.08] text-white' : 'bg-white border-gray-100 text-[#110B33]'
         }`}>
           <div className="space-y-4 font-sans text-sm mt-2">
+            {/* Direct Blog Link for Mobile */}
+            <div className="pt-2 pb-1">
+              <button
+                onClick={() => setPath('blog')}
+                className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-[#00C2FF]/30 text-[#00C2FF] text-xs font-bold font-mono flex items-center justify-between"
+              >
+                <span>📚 TECH BLOG & INSIGHTS</span>
+                <span>→</span>
+              </button>
+            </div>
+
             <div>
               <p className="text-[10px] font-bold text-[#47C7BF] uppercase mb-1.5 tracking-wider">Solutions</p>
               <div className="grid grid-cols-1 gap-1 pl-2">

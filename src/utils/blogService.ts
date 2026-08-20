@@ -99,8 +99,26 @@ export function getBlogPosts(): BlogPost[] {
   }
   try {
     const parsed = JSON.parse(stored) as BlogPost[];
-    // Ensure all posts have comments initialized as arrays
-    return parsed.map(post => ({
+    const initialIds = new Set(INITIAL_BLOG_POSTS.map(p => p.id));
+    const userCreatedPosts = parsed.filter(p => !initialIds.has(p.id));
+
+    // Map initial posts to include any code updates while keeping user comments if present
+    const mergedInitial = INITIAL_BLOG_POSTS.map(initialPost => {
+      const storedMatch = parsed.find(p => p.id === initialPost.id);
+      if (storedMatch && storedMatch.comments && storedMatch.comments.length > 0) {
+        return {
+          ...initialPost,
+          comments: storedMatch.comments
+        };
+      }
+      return initialPost;
+    });
+
+    const combined = [...mergedInitial, ...userCreatedPosts];
+    // Save back updated combined list to localStorage so mobile/all devices stay in sync
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(combined));
+
+    return combined.map(post => ({
       ...post,
       comments: post.comments || []
     }));
