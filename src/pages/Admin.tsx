@@ -74,7 +74,7 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
   useEffect(() => {
     if (isAuthenticated) {
       setPosts(getBlogPosts());
-      fetch('/api/blogs')
+      fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data) && data.length > 0) {

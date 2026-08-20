@@ -100,15 +100,36 @@ const LOCAL_STORAGE_KEY = 'natton_digital_blog_posts';
 
 // Fetch from API in background and update localStorage
 if (typeof window !== 'undefined') {
-  fetch('/api/blogs')
-    .then(res => res.json())
-    .then(data => {
-      if (Array.isArray(data) && data.length > 0) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-        window.dispatchEvent(new Event('blogs_updated'));
+  if (supabase) {
+    supabase.from('blogs').select('*').then(({ data, error }: { data: any; error: any }) => {
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          excerpt: item.excerpt,
+          category: item.category,
+          author: item.author,
+          date: item.date,
+          readTime: item.read_time || item.readTime,
+          tags: item.tags || [],
+          featuredImage: item.featured_image || item.featuredImage,
+          content: item.content,
+          comments: item.comments || []
+        }));
+        saveBlogPosts(mapped);
       }
-    })
-    .catch(() => {});
+    }).then(null, () => {});
+  } else {
+    fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+          window.dispatchEvent(new Event('blogs_updated'));
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 export function getBlogPosts(): BlogPost[] {
