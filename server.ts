@@ -112,25 +112,35 @@ const INITIAL_BLOG_POSTS = [
   }
 ];
 
+let globalPostsCache: any[] | null = null;
+
 function getStoredPosts() {
+  if (globalPostsCache && globalPostsCache.length > 0) {
+    return globalPostsCache;
+  }
   try {
     if (fs.existsSync(DATA_FILE)) {
       const data = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      if (!parsed.some((p: any) => p.id === 'post-7')) {
-        parsed.unshift(INITIAL_BLOG_POSTS[0]);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (!parsed.some((p: any) => p.id === 'post-7')) {
+          parsed.unshift(INITIAL_BLOG_POSTS[0]);
+        }
+        globalPostsCache = parsed;
         saveStoredPosts(parsed);
+        return globalPostsCache;
       }
-      return parsed;
     }
   } catch (e) {
     console.error('Error reading blogs.json', e);
   }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_BLOG_POSTS, null, 2));
-  return INITIAL_BLOG_POSTS;
+  globalPostsCache = INITIAL_BLOG_POSTS;
+  saveStoredPosts(INITIAL_BLOG_POSTS);
+  return globalPostsCache;
 }
 
 function saveStoredPosts(posts: any[]) {
+  globalPostsCache = posts;
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(posts, null, 2));
   } catch (e) {

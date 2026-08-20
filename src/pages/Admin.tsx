@@ -74,19 +74,27 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
   useEffect(() => {
     if (isAuthenticated) {
       setPosts(getBlogPosts());
-      fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data) && data.length > 0) {
-            setPosts(data);
-            saveBlogPosts(data);
-          }
-        })
-        .catch(() => {});
+      const fetchFreshPosts = () => {
+        fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data) && data.length > 0) {
+              setPosts(data);
+              saveBlogPosts(data);
+            }
+          })
+          .catch(() => {});
+      };
+
+      fetchFreshPosts();
+      const intervalId = setInterval(fetchFreshPosts, 5000);
 
       const handleUpdate = () => setPosts(getBlogPosts());
       window.addEventListener('blogs_updated', handleUpdate);
-      return () => window.removeEventListener('blogs_updated', handleUpdate);
+      return () => {
+        clearInterval(intervalId);
+        window.removeEventListener('blogs_updated', handleUpdate);
+      };
     }
   }, [isAuthenticated]);
 

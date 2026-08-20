@@ -126,6 +126,8 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
 
     fetchFreshPosts();
 
+    const intervalId = setInterval(fetchFreshPosts, 5000);
+
     const handleUpdate = () => setBlogPostsList(getBlogPosts());
     const handleFocus = () => fetchFreshPosts();
     const handleVisibility = () => {
@@ -139,6 +141,7 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener('blogs_updated', handleUpdate);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
