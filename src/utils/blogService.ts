@@ -9,6 +9,19 @@ export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUr
 
 const INITIAL_BLOG_POSTS: BlogPost[] = [
   {
+    id: 'post-7',
+    title: 'aabx',
+    excerpt: 'adcscscscsd',
+    category: 'AI Marketing' as any,
+    author: 'Arjun Mehta, AI Solution Architect',
+    date: 'Aug 20, 2026',
+    readTime: '6 min read',
+    tags: ['SEO', 'AEO', 'Programmatic'],
+    featuredImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+    content: 'adcscscscsd',
+    comments: []
+  },
+  {
     id: 'post-1',
     title: 'How to Interlock n8n and GoHighLevel CRM for Local MSMEs',
     excerpt: 'Learn the exact webhook-first architecture we deploy to qualify paid Facebook lead ads under 45 seconds.',
@@ -134,19 +147,23 @@ if (typeof window !== 'undefined') {
 
 export function getBlogPosts(): BlogPost[] {
   const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_BLOG_POSTS));
-    return INITIAL_BLOG_POSTS;
+  let posts = INITIAL_BLOG_POSTS;
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as BlogPost[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        posts = parsed;
+      }
+    } catch (e) {}
   }
-  try {
-    const parsed = JSON.parse(stored) as BlogPost[];
-    return parsed.map(post => ({
-      ...post,
-      comments: post.comments || []
-    }));
-  } catch (e) {
-    return INITIAL_BLOG_POSTS;
+  if (!posts.some(p => p.id === 'post-7')) {
+    posts.unshift(INITIAL_BLOG_POSTS[0]);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
   }
+  return posts.map(post => ({
+    ...post,
+    comments: post.comments || []
+  }));
 }
 
 export function saveBlogPosts(posts: BlogPost[]): void {
