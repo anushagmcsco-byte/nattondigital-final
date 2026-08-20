@@ -1,4 +1,11 @@
 import { BlogPost, BlogComment } from '../types';
+import { createClient } from '@supabase/supabase-js';
+
+const env = (import.meta as any).env || {};
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+
+export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const INITIAL_BLOG_POSTS: BlogPost[] = [
   {
@@ -123,6 +130,9 @@ export function getBlogPosts(): BlogPost[] {
 
 export function saveBlogPosts(posts: BlogPost[]): void {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('blogs_updated'));
+  }
 }
 
 export function getBlogPostById(id: string): BlogPost | undefined {
@@ -144,22 +154,40 @@ export function addBlogPost(post: Omit<BlogPost, 'id' | 'comments'>): BlogPost {
   fetch('/api/blogs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(post)
+    body: JSON.stringify(newPost)
   })
     .then(res => res.json())
     .then(serverPost => {
       if (serverPost && serverPost.id) {
-        // replace temp id with server id if needed
         const current = getBlogPosts();
         const idx = current.findIndex(p => p.id === newPost.id);
         if (idx !== -1) {
           current[idx] = serverPost;
           saveBlogPosts(current);
-          window.dispatchEvent(new Event('blogs_updated'));
+        } else {
+          current.unshift(serverPost);
+          saveBlogPosts(current);
         }
       }
     })
     .catch(() => {});
+
+  // Sync to Supabase if available
+  if (supabase) {
+    supabase.from('blogs').upsert({
+      id: newPost.id,
+      title: newPost.title,
+      excerpt: newPost.excerpt,
+      category: newPost.category,
+      author: newPost.author,
+      date: newPost.date,
+      read_time: newPost.readTime,
+      tags: newPost.tags,
+      featured_image: newPost.featuredImage,
+      content: newPost.content,
+      comments: newPost.comments
+    }).then(null, () => {});
+  }
 
   return newPost;
 }
@@ -186,6 +214,22 @@ export function updateBlogPost(id: string, updatedFields: Partial<BlogPost>): Bl
     body: JSON.stringify(updatedFields)
   }).catch(() => {});
 
+  if (supabase) {
+    supabase.from('blogs').upsert({
+      id: updatedPost.id,
+      title: updatedPost.title,
+      excerpt: updatedPost.excerpt,
+      category: updatedPost.category,
+      author: updatedPost.author,
+      date: updatedPost.date,
+      read_time: updatedPost.readTime,
+      tags: updatedPost.tags,
+      featured_image: updatedPost.featuredImage,
+      content: updatedPost.content,
+      comments: updatedPost.comments
+    }).then(null, () => {});
+  }
+
   return updatedPost;
 }
 
@@ -199,6 +243,10 @@ export function deleteBlogPost(id: string): boolean {
   fetch(`/api/blogs/${id}`, {
     method: 'DELETE'
   }).catch(() => {});
+
+  if (supabase) {
+    supabase.from('blogs').delete().eq('id', id).then(null, () => {});
+  }
 
   return true;
 }
