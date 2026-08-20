@@ -38,7 +38,7 @@ import {
   Info
 } from 'lucide-react';
 import { RoutePath, BlogPost } from '../types';
-import { getBlogPosts, addCommentToPost } from '../utils/blogService';
+import { getBlogPosts, addCommentToPost, saveBlogPosts } from '../utils/blogService';
 
 interface BlogProps {
   setPath: (path: RoutePath) => void;
@@ -111,6 +111,16 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
 
   useEffect(() => {
     setBlogPostsList(getBlogPosts());
+    fetch('/api/blogs')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setBlogPostsList(data);
+          saveBlogPosts(data);
+        }
+      })
+      .catch(() => {});
+
     const handleUpdate = () => setBlogPostsList(getBlogPosts());
     window.addEventListener('blogs_updated', handleUpdate);
     return () => window.removeEventListener('blogs_updated', handleUpdate);
