@@ -73,6 +73,9 @@ export default function Admin({ setPath, darkMode, setSelectedBlogPostId }: Admi
   useEffect(() => {
     if (isAuthenticated) {
       setPosts(getBlogPosts());
+      const handleUpdate = () => setPosts(getBlogPosts());
+      window.addEventListener('blogs_updated', handleUpdate);
+      return () => window.removeEventListener('blogs_updated', handleUpdate);
     }
   }, [isAuthenticated]);
 

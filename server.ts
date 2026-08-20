@@ -1,11 +1,21 @@
-import { BlogPost, BlogComment } from '../types';
+import express from "express";
+import path from "path";
+import fs from "fs";
+import { createServer as createViteServer } from "vite";
 
-const INITIAL_BLOG_POSTS: BlogPost[] = [
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+const DATA_FILE = path.join(process.cwd(), 'blogs.json');
+
+const INITIAL_BLOG_POSTS = [
   {
     id: 'post-1',
     title: 'How to Interlock n8n and GoHighLevel CRM for Local MSMEs',
     excerpt: 'Learn the exact webhook-first architecture we deploy to qualify paid Facebook lead ads under 45 seconds.',
-    category: 'Marketing Automation' as any,
+    category: 'Marketing Automation',
     author: 'Arjun Mehta, AI Solution Architect',
     date: 'June 28, 2026',
     readTime: '6 min read',
@@ -26,7 +36,7 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
     id: 'post-2',
     title: 'The Rise of AEO: Is Your Website Optimized for ChatGPT & Gemini?',
     excerpt: 'Google Search is transitioning to AI. Explore how to format website metadata so LLMs cite your brand.',
-    category: 'AI Tech' as any,
+    category: 'AI Tech',
     author: 'Siddharth Roy, Growth Strategist',
     date: 'June 24, 2026',
     readTime: '8 min read',
@@ -39,7 +49,7 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
     id: 'post-3',
     title: 'Scaling WhatsApp Business API: Checklists for SOC2 & HIPAA Uptime',
     excerpt: 'A complete security compliance handbook for healthcare clinics deploying automated clinical triages.',
-    category: 'Business OS' as any,
+    category: 'Business OS',
     author: 'Priya Sharma, CRM Specialist',
     date: 'June 20, 2026',
     readTime: '10 min read',
@@ -52,7 +62,7 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
     id: 'post-4',
     title: 'Building Multi-Agent Consensus: n8n Sandbox Orchestration Strategies',
     excerpt: 'Deploying autonomous AI agents (Sales, Support, HR) inside sandboxed n8n loops to double task accuracy.',
-    category: 'Agentic Workflows' as any,
+    category: 'Agentic Workflows',
     author: 'Arjun Mehta, AI Solution Architect',
     date: 'June 15, 2026',
     readTime: '9 min read',
@@ -65,7 +75,7 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
     id: 'post-5',
     title: 'Voice AI Strategy: Integrating Low-Latency Calling Agents Natively',
     excerpt: 'Unlock conversion rates with sub-1.2 second voice bot telephony connected straight to your GHL pipelines.',
-    category: 'AI Calling' as any,
+    category: 'AI Calling',
     author: 'Priya Sharma, CRM Specialist',
     date: 'June 10, 2026',
     readTime: '7 min read',
@@ -78,7 +88,7 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
     id: 'post-6',
     title: 'The Programmatic SEO Blueprint: Capturing Tier-2 Regional Markets',
     excerpt: 'How we generated over 2,500 programmatic city pages for regional services with zero manual templates.',
-    category: 'AI Marketing' as any,
+    category: 'AI Marketing',
     author: 'Siddharth Roy, Growth Strategist',
     date: 'June 05, 2026',
     readTime: '11 min read',
@@ -89,163 +99,129 @@ const INITIAL_BLOG_POSTS: BlogPost[] = [
   }
 ];
 
-const LOCAL_STORAGE_KEY = 'natton_digital_blog_posts';
-
-// Fetch from API in background and update localStorage
-if (typeof window !== 'undefined') {
-  fetch('/api/blogs')
-    .then(res => res.json())
-    .then(data => {
-      if (Array.isArray(data) && data.length > 0) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-        window.dispatchEvent(new Event('blogs_updated'));
-      }
-    })
-    .catch(() => {});
-}
-
-export function getBlogPosts(): BlogPost[] {
-  const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_BLOG_POSTS));
-    return INITIAL_BLOG_POSTS;
-  }
+function getStoredPosts() {
   try {
-    const parsed = JSON.parse(stored) as BlogPost[];
-    return parsed.map(post => ({
-      ...post,
-      comments: post.comments || []
-    }));
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
   } catch (e) {
-    return INITIAL_BLOG_POSTS;
+    console.error('Error reading blogs.json', e);
+  }
+  fs.writeFileSync(DATA_FILE, JSON.stringify(INITIAL_BLOG_POSTS, null, 2));
+  return INITIAL_BLOG_POSTS;
+}
+
+function saveStoredPosts(posts: any[]) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(posts, null, 2));
+  } catch (e) {
+    console.error('Error writing blogs.json', e);
   }
 }
 
-export function saveBlogPosts(posts: BlogPost[]): void {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
-}
+// API Routes
+app.get('/api/blogs', (req, res) => {
+  const posts = getStoredPosts();
+  res.json(posts);
+});
 
-export function getBlogPostById(id: string): BlogPost | undefined {
-  const posts = getBlogPosts();
-  return posts.find(p => p.id === id);
-}
-
-export function addBlogPost(post: Omit<BlogPost, 'id' | 'comments'>): BlogPost {
-  const posts = getBlogPosts();
-  const newPost: BlogPost = {
-    ...post,
+app.post('/api/blogs', (req, res) => {
+  const posts = getStoredPosts();
+  const newPost = {
+    ...req.body,
     id: `post-${Date.now()}`,
     comments: []
   };
   posts.unshift(newPost);
-  saveBlogPosts(posts);
+  saveStoredPosts(posts);
+  res.json(newPost);
+});
 
-  // Sync to server API
-  fetch('/api/blogs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(post)
-  })
-    .then(res => res.json())
-    .then(serverPost => {
-      if (serverPost && serverPost.id) {
-        // replace temp id with server id if needed
-        const current = getBlogPosts();
-        const idx = current.findIndex(p => p.id === newPost.id);
-        if (idx !== -1) {
-          current[idx] = serverPost;
-          saveBlogPosts(current);
-          window.dispatchEvent(new Event('blogs_updated'));
-        }
-      }
-    })
-    .catch(() => {});
-
-  return newPost;
-}
-
-export const createBlogPost = addBlogPost;
-
-export function updateBlogPost(id: string, updatedFields: Partial<BlogPost>): BlogPost | undefined {
-  const posts = getBlogPosts();
-  const index = posts.findIndex(p => p.id === id);
-  if (index === -1) return undefined;
-
-  const updatedPost = {
+app.put('/api/blogs/:id', (req, res) => {
+  const { id } = req.params;
+  const posts = getStoredPosts();
+  const index = posts.findIndex((p: any) => p.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+  posts[index] = {
     ...posts[index],
-    ...updatedFields,
+    ...req.body,
     id
   };
-  posts[index] = updatedPost;
-  saveBlogPosts(posts);
+  saveStoredPosts(posts);
+  res.json(posts[index]);
+});
 
-  // Sync to server API
-  fetch(`/api/blogs/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updatedFields)
-  }).catch(() => {});
+app.delete('/api/blogs/:id', (req, res) => {
+  const { id } = req.params;
+  let posts = getStoredPosts();
+  const filtered = posts.filter((p: any) => p.id !== id);
+  if (filtered.length === posts.length) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+  saveStoredPosts(filtered);
+  res.json({ success: true });
+});
 
-  return updatedPost;
-}
-
-export function deleteBlogPost(id: string): boolean {
-  const posts = getBlogPosts();
-  const filtered = posts.filter(p => p.id !== id);
-  if (filtered.length === posts.length) return false;
-  saveBlogPosts(filtered);
-
-  // Sync to server API
-  fetch(`/api/blogs/${id}`, {
-    method: 'DELETE'
-  }).catch(() => {});
-
-  return true;
-}
-
-export function addCommentToPost(postId: string, comment: Omit<BlogComment, 'id' | 'createdAt'>): BlogComment | undefined {
-  const posts = getBlogPosts();
-  const index = posts.findIndex(p => p.id === postId);
-  if (index === -1) return undefined;
-
-  const newComment: BlogComment = {
-    ...comment,
+app.post('/api/blogs/:id/comments', (req, res) => {
+  const { id } = req.params;
+  const { authorName, authorEmail, commentText } = req.body;
+  const posts = getStoredPosts();
+  const post = posts.find((p: any) => p.id === id);
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+  const newComment = {
     id: `comment-${Date.now()}`,
+    authorName,
+    authorEmail,
+    commentText,
     createdAt: new Date().toISOString()
   };
+  if (!post.comments) {
+    post.comments = [];
+  }
+  post.comments.push(newComment);
+  saveStoredPosts(posts);
+  res.json(newComment);
+});
 
-  const post = posts[index];
-  post.comments = [...(post.comments || []), newComment];
-  posts[index] = post;
-  saveBlogPosts(posts);
+app.delete('/api/blogs/:id/comments/:commentId', (req, res) => {
+  const { id, commentId } = req.params;
+  const posts = getStoredPosts();
+  const post = posts.find((p: any) => p.id === id);
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+  const originalLen = (post.comments || []).length;
+  post.comments = (post.comments || []).filter((c: any) => c.id !== commentId);
+  if (post.comments.length === originalLen) {
+    return res.status(404).json({ error: 'Comment not found' });
+  }
+  saveStoredPosts(posts);
+  res.json({ success: true });
+});
 
-  // Sync to server API
-  fetch(`/api/blogs/${postId}/comments`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(comment)
-  }).catch(() => {});
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
 
-  return newComment;
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 }
 
-export function deleteCommentFromPost(postId: string, commentId: string): boolean {
-  const posts = getBlogPosts();
-  const index = posts.findIndex(p => p.id === postId);
-  if (index === -1) return false;
-
-  const post = posts[index];
-  const originalLength = (post.comments || []).length;
-  post.comments = (post.comments || []).filter(c => c.id !== commentId);
-  if (post.comments.length === originalLength) return false;
-
-  posts[index] = post;
-  saveBlogPosts(posts);
-
-  // Sync to server API
-  fetch(`/api/blogs/${postId}/comments/${commentId}`, {
-    method: 'DELETE'
-  }).catch(() => {});
-
-  return true;
-}
+startServer();

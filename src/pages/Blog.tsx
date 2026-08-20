@@ -111,6 +111,9 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
 
   useEffect(() => {
     setBlogPostsList(getBlogPosts());
+    const handleUpdate = () => setBlogPostsList(getBlogPosts());
+    window.addEventListener('blogs_updated', handleUpdate);
+    return () => window.removeEventListener('blogs_updated', handleUpdate);
   }, []);
 
   const refreshPosts = () => {
