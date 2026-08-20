@@ -81,7 +81,7 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
   // Infinite Scroll / Load more posts mock
-  const [visiblePostsCount, setVisiblePostsCount] = useState(6);
+  const [visiblePostsCount, setVisiblePostsCount] = useState(20);
 
   // Core Categories List
   const categoriesList = [
@@ -111,19 +111,38 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
 
   useEffect(() => {
     setBlogPostsList(getBlogPosts());
-    fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          setBlogPostsList(data);
-          saveBlogPosts(data);
-        }
-      })
-      .catch(() => {});
+    
+    const fetchFreshPosts = () => {
+      fetch(`/api/blogs?_t=${Date.now()}`, { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setBlogPostsList(data);
+            saveBlogPosts(data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchFreshPosts();
 
     const handleUpdate = () => setBlogPostsList(getBlogPosts());
+    const handleFocus = () => fetchFreshPosts();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchFreshPosts();
+      }
+    };
+
     window.addEventListener('blogs_updated', handleUpdate);
-    return () => window.removeEventListener('blogs_updated', handleUpdate);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('blogs_updated', handleUpdate);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const refreshPosts = () => {
@@ -472,7 +491,7 @@ export default function Blog({ setPath, darkMode, selectedBlogPostId, setSelecte
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {blogPostsList.slice(0, 6).map((post, i) => (
+            {blogPostsList.map((post, i) => (
               <div 
                 key={post.id}
                 onClick={() => {
