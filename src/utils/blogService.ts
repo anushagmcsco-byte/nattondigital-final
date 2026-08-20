@@ -1,4 +1,11 @@
 import { BlogPost, BlogComment } from '../types';
+import { createClient } from '@supabase/supabase-js';
+
+const env = (import.meta as any).env || {};
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+
+export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const INITIAL_BLOG_POSTS: BlogPost[] = [
   {
@@ -102,7 +109,6 @@ export function getBlogPosts(): BlogPost[] {
     const initialIds = new Set(INITIAL_BLOG_POSTS.map(p => p.id));
     const userCreatedPosts = parsed.filter(p => !initialIds.has(p.id));
 
-    // Map initial posts to include any code updates while keeping user comments if present
     const mergedInitial = INITIAL_BLOG_POSTS.map(initialPost => {
       const storedMatch = parsed.find(p => p.id === initialPost.id);
       if (storedMatch && storedMatch.comments && storedMatch.comments.length > 0) {
@@ -115,7 +121,6 @@ export function getBlogPosts(): BlogPost[] {
     });
 
     const combined = [...mergedInitial, ...userCreatedPosts];
-    // Save back updated combined list to localStorage so mobile/all devices stay in sync
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(combined));
 
     return combined.map(post => ({
@@ -127,8 +132,66 @@ export function getBlogPosts(): BlogPost[] {
   }
 }
 
+// Background sync with Supabase if configured
+if (supabase) {
+  supabase.from('blogs').select('*').then(({ data, error }) => {
+    if (!error && data && data.length > 0) {
+      const mappedPosts: BlogPost[] = data.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        excerpt: row.excerpt,
+        category: row.category,
+        author: row.author,
+        date: row.date,
+        readTime: row.read_time || row.readTime,
+        tags: row.tags || [],
+        featuredImage: row.featured_image || row.featuredImage,
+        content: row.content,
+        comments: row.comments || []
+      }));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(mappedPosts));
+    } else if (!error && (!data || data.length === 0)) {
+      const current = getBlogPosts();
+      current.forEach(async (post) => {
+        await supabase.from('blogs').upsert({
+          id: post.id,
+          title: post.title,
+          excerpt: post.excerpt,
+          category: post.category,
+          author: post.author,
+          date: post.date,
+          read_time: post.readTime,
+          tags: post.tags,
+          featured_image: post.featuredImage,
+          content: post.content,
+          comments: post.comments
+        });
+      });
+    }
+  }).then(undefined, (err: any) => {
+    console.log('Supabase sync notice:', err);
+  });
+}
+
 export function saveBlogPosts(posts: BlogPost[]): void {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
+  if (supabase) {
+    posts.forEach(async (post) => {
+      await supabase.from('blogs').upsert({
+        id: post.id,
+        title: post.title,
+        excerpt: post.excerpt,
+        category: post.category,
+        author: post.author,
+        date: post.date,
+        read_time: post.readTime,
+        tags: post.tags,
+        featured_image: post.featuredImage,
+        content: post.content,
+        comments: post.comments
+      });
+    });
+  }
 }
 
 export function getBlogPostById(id: string): BlogPost | undefined {
@@ -143,10 +206,12 @@ export function addBlogPost(post: Omit<BlogPost, 'id' | 'comments'>): BlogPost {
     id: `post-${Date.now()}`,
     comments: []
   };
-  posts.unshift(newPost); // Add to the top of the list
+  posts.unshift(newPost);
   saveBlogPosts(posts);
   return newPost;
 }
+
+export const createBlogPost = addBlogPost;
 
 export function updateBlogPost(id: string, updatedFields: Partial<BlogPost>): BlogPost | undefined {
   const posts = getBlogPosts();
@@ -156,7 +221,7 @@ export function updateBlogPost(id: string, updatedFields: Partial<BlogPost>): Bl
   const updatedPost = {
     ...posts[index],
     ...updatedFields,
-    id // Keep original ID
+    id
   };
   posts[index] = updatedPost;
   saveBlogPosts(posts);
@@ -168,6 +233,9 @@ export function deleteBlogPost(id: string): boolean {
   const filtered = posts.filter(p => p.id !== id);
   if (filtered.length === posts.length) return false;
   saveBlogPosts(filtered);
+  if (supabase) {
+    supabase.from('blogs').delete().eq('id', id).then(() => {}, () => {});
+  }
   return true;
 }
 
@@ -189,19 +257,16 @@ export function addCommentToPost(postId: string, comment: Omit<BlogComment, 'id'
   return newComment;
 }
 
-export const createBlogPost = addBlogPost;
-
 export function deleteCommentFromPost(postId: string, commentId: string): boolean {
   const posts = getBlogPosts();
   const index = posts.findIndex(p => p.id === postId);
   if (index === -1) return false;
 
   const post = posts[index];
-  const initialComments = post.comments || [];
-  post.comments = initialComments.filter(c => c.id !== commentId);
-  
-  if (post.comments.length === initialComments.length) return false;
-  
+  const originalLength = (post.comments || []).length;
+  post.comments = (post.comments || []).filter(c => c.id !== commentId);
+  if (post.comments.length === originalLength) return false;
+
   posts[index] = post;
   saveBlogPosts(posts);
   return true;
